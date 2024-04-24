@@ -1,0 +1,12 @@
+version: '2'
+
+services:
+  blive-vup-layer:
+    build: .
+    restart: always
+    ports:
+      - "10000:8080"
+    environment:
+      ACCESS_KEY: "TFjBImQxy96VJ1pUITwyu0i2"
+      SECRET_KEY: ""
+      APP_ID: "1696608010956"

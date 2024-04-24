@@ -3,9 +3,9 @@ import { onMounted, reactive, nextTick, ref } from 'vue'
 import imgSrc from '@/assets/captain_test_loop_1.webp'
 import noFaceSrc from '@/assets/noface.gif'
 
-let protocol = "ws"
+let protocol = 'ws'
 if (location.protocol === 'https:') {
-  protocol = "wss"
+  protocol = 'wss'
 }
 const serverUrl = protocol + '://' + location.host + '/server/ws'
 
@@ -43,11 +43,14 @@ const state = reactive({
   gift_list: []
 })
 
-const sendMemberShip = () => {
-  state.membership_list.push({
-    uname: '青云',
-    uface: noFaceSrc
-  })
+const sendMemberShip = (data) => {
+  if (!data) {
+    data = {
+      uname: '青云',
+      uface: noFaceSrc
+    }
+  }
+  state.membership_list.push(data)
   consumeMemberShipList()
 }
 
@@ -60,7 +63,6 @@ const consumeMemberShipList = () => {
   }
 
   const display = state.membership_list.splice(0, 1)[0]
-  console.log(display)
   state.display_membership.uname = display.uname
   state.display_membership.uface = display.uface
   state.display_membership.playing = true
@@ -177,13 +179,20 @@ const sendGift = async (data) => {
   gift_list.value.scrollTo({ top: gift_list.value.scrollHeight, behavior: 'smooth' })
 }
 
-let code = ''
+let init_params = {
+  code: '',
+  timestamp: 0,
+  room_id: 0,
+  mid: 0,
+  caller: 'bilibili',
+  code_sign: ''
+}
 
 function connectWebSocketServer() {
   if (state.is_connect_websocket) {
     return
   }
-  if (!code) {
+  if (!init_params.code) {
     state.connect_message = '请提供身份码'
     return
   }
@@ -199,9 +208,7 @@ function connectWebSocketServer() {
     socket.send(
       JSON.stringify({
         type: 'init',
-        data: {
-          code: code
-        }
+        data: init_params
       })
     )
   })
@@ -231,9 +238,7 @@ function connectWebSocketServer() {
             socket.send(
               JSON.stringify({
                 type: 'init',
-                data: {
-                  code: code
-                }
+                data: init_params
               })
             )
           }, 5000)
@@ -276,8 +281,24 @@ function connectWebSocketServer() {
 
 onMounted(() => {
   const query = new URLSearchParams(location.search)
-  code = query.get('code')
-  console.log('身份码code:', code)
+
+  const timestamp = Number(query.get('Timestamp'))
+  const room_id = Number(query.get('RoomId'))
+  const mid = Number(query.get('Mid'))
+  const caller = query.get('Caller')
+  const code = query.get('Code')
+  const code_sign = query.get('CodeSign')
+
+  init_params = {
+    timestamp,
+    room_id,
+    mid,
+    caller,
+    code,
+    code_sign
+  }
+  console.log('身份码code：', code)
+  console.log('身份信息:', init_params)
 
   connectWebSocketServer()
 })
