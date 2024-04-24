@@ -6,13 +6,15 @@ COPY ./frontend/ .
 
 RUN npm install && npm run build
 
-FROM golang:1.18.10 AS BUILDER2
+FROM golang:1.20.14 AS BUILDER2
 
 WORKDIR /usr/src/app
 
+ENV GOPROXY http://goproxy.cn
+
 COPY . .
 
-RUN go build -o blive-vup-layer
+RUN CGO_ENABLED=0 go build -o blive-vup-layer
 
 FROM debian:11.4-slim
 
