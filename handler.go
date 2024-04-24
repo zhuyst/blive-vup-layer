@@ -287,7 +287,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 
 					CodeSign: initData.CodeSign,
 				}
-				if ok := signParams.ValidateSignature(h.liveCfg.AccessKeySecret); ok {
+				if ok := signParams.ValidateSignature(h.liveCfg.AccessKeySecret); !ok {
 					conn.WriteResultError(ResultTypeRoom, CodeBadRequest, "invalid signature")
 					return
 				}
