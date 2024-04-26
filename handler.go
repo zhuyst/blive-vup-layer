@@ -11,12 +11,38 @@ import (
 	"github.com/vtb-link/bianka/proto"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
 func HandleImg(c *gin.Context) {
 	imgUrl := c.Query("img_url")
+	u, err := url.Parse(imgUrl)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"err": err.Error(),
+		})
+		return
+	}
+	if u.Host != "i0.hdslb.com" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"err": "invalid host",
+		})
+		return
+	}
+
+	referer := c.GetHeader("Referer")
+	if referer != "" && strings.Contains(referer, "localhost") ||
+		strings.Contains(referer, "blivechat.zhuyst.cc") ||
+		strings.Contains(referer, "play-live.bilibili.com") {
+		c.JSON(http.StatusForbidden, gin.H{
+			"err": "blocked",
+		})
+		return
+	}
+
 	resp, err := http.Get(imgUrl)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -31,14 +57,21 @@ func HandleImg(c *gin.Context) {
 }
 
 type Handler struct {
-	liveCfg    *live.Config
+	cfg        *Config
 	liveClient *live.Client
 }
 
-func NewHandler(liveCfg *live.Config) *Handler {
+type Config struct {
+	AccessKey           string
+	SecretKey           string
+	AppId               int64
+	DisableValidateSign bool
+}
+
+func NewHandler(cfg *Config) *Handler {
 	return &Handler{
-		liveCfg:    liveCfg,
-		liveClient: live.NewClient(liveCfg),
+		cfg:        cfg,
+		liveClient: live.NewClient(live.NewConfig(cfg.AccessKey, cfg.SecretKey, cfg.AppId)),
 	}
 }
 
@@ -141,7 +174,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 				switch d := data.(type) {
 				case *proto.CmdDanmuData:
 					{
-						if _, ok := danmuGiftMap[d.Msg]; !ok {
+						if _, ok := danmuGiftMap[d.Msg]; ok {
 							break
 						}
 						conn.WriteResultOK(ResultTypeDanmu, &DanmuData{
@@ -235,7 +268,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 					}
 				default:
 					{
-
+						break
 					}
 				}
 
@@ -279,17 +312,19 @@ func (h *Handler) WebSocket(c *gin.Context) {
 					conn.WriteResultError(ResultTypeRoom, CodeBadRequest, err.Error())
 					return
 				}
-				signParams := live.H5SignatureParams{
-					Timestamp: strconv.FormatInt(initData.Timestamp, 10),
-					Code:      initData.Code,
-					Mid:       strconv.FormatInt(initData.Mid, 10),
-					Caller:    initData.Caller,
+				if !h.cfg.DisableValidateSign {
+					signParams := live.H5SignatureParams{
+						Timestamp: strconv.FormatInt(initData.Timestamp, 10),
+						Code:      initData.Code,
+						Mid:       strconv.FormatInt(initData.Mid, 10),
+						Caller:    initData.Caller,
 
-					CodeSign: initData.CodeSign,
-				}
-				if ok := signParams.ValidateSignature(h.liveCfg.AccessKeySecret); !ok {
-					conn.WriteResultError(ResultTypeRoom, CodeBadRequest, "invalid signature")
-					return
+						CodeSign: initData.CodeSign,
+					}
+					if ok := signParams.ValidateSignature(h.cfg.SecretKey); !ok {
+						conn.WriteResultError(ResultTypeRoom, CodeBadRequest, "invalid signature")
+						return
+					}
 				}
 				init(initData.Code)
 				break
@@ -302,7 +337,15 @@ func (h *Handler) WebSocket(c *gin.Context) {
 		default:
 			{
 				conn.WriteResultError(ResultTypeRoom, CodeBadRequest, "unknown type")
+				break
 			}
 		}
 	}
+}
+
+func convertImgUrl(imgUrl string) string {
+	return imgUrl
+	//query := url.Values{}
+	//query.Set("img_url", imgUrl)
+	//return "/server/img?" + query.Encode()
 }

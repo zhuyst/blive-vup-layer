@@ -1,4 +1,4 @@
-FROM node:20.12.2 AS BUILDER1
+FROM node:20.12.2-buster AS BUILDER1
 
 WORKDIR /usr/src/app
 
@@ -6,7 +6,7 @@ COPY ./frontend/ .
 
 RUN npm install && npm run build
 
-FROM golang:1.20.14 AS BUILDER2
+FROM golang:1.20.14-bullseye AS BUILDER2
 
 WORKDIR /usr/src/app
 

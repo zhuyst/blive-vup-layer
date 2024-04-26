@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
-	"github.com/vtb-link/bianka/live"
+	cachecontrol "go.eigsys.de/gin-cachecontrol/v2"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -42,32 +41,36 @@ func main() {
 		log.Fatalf("failed to convert APP_ID to int: %v", err)
 		return
 	}
+	disableValidateSignStr := os.Getenv("DISABLE_VALIDATE_SIGN")
+	disableValidateSign, _ := strconv.ParseBool(disableValidateSignStr)
 
-	rCfg := live.NewConfig(
-		ak,
-		sk,
-		appId, // 应用id
-	)
-
-	h := NewHandler(rCfg)
+	h := NewHandler(&Config{
+		AccessKey:           ak,
+		SecretKey:           sk,
+		AppId:               appId,
+		DisableValidateSign: disableValidateSign,
+	})
 
 	gin.SetMode(gin.ReleaseMode)
 	g := gin.New()
 	g.Use(gin.Recovery())
 
-	g.GET("/healthz", func(c *gin.Context) {
-		c.String(http.StatusOK, "ok")
-	})
-	g.GET("/server/img", HandleImg)
-	g.GET("/server/ws", h.WebSocket)
-
 	staticRouter := g.Group("/")
 	staticRouter.Use(func(c *gin.Context) {
 		c.Header("X-Frame-Options", "ALLOW-FROM https://play-live.bilibili.com/")
 	})
+	assetsRouter := staticRouter.Group("/")
+	assetsRouter.Use(cachecontrol.New(cachecontrol.CacheAssetsForeverPreset))
+
+	g.GET("/healthz", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+	g.GET("/server/ws", h.WebSocket)
+	//assetsRouter.GET("/server/img", HandleImg)
 	staticRouter.StaticFile("/", "./frontend/dist/index.html")
-	staticRouter.StaticFile("/favicon.ico", "./frontend/dist/favicon.ico")
-	staticRouter.Static("/assets/", "./frontend/dist/assets")
+
+	assetsRouter.StaticFile("/favicon.ico", "./frontend/dist/favicon.ico")
+	assetsRouter.Static("/assets/", "./frontend/dist/assets")
 
 	const addr = ":8080"
 	server := http.Server{
@@ -86,10 +89,4 @@ func main() {
 	<-stopCh
 	server.Close()
 	log.Infof("server shutdown")
-}
-
-func convertImgUrl(imgUrl string) string {
-	query := url.Values{}
-	query.Set("img_url", imgUrl)
-	return "/server/img?" + query.Encode()
 }

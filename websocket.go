@@ -18,6 +18,7 @@ type WebSocketConn struct {
 func NewWebSocketConn(c *gin.Context) (*WebSocketConn, error) {
 	wsUpgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
+
 			return true
 		},
 	}

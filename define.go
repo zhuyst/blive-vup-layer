@@ -46,11 +46,11 @@ func init() {
 
 type InitRequestData struct {
 	Code      string `json:"code" binding:"required"`
-	Timestamp int64  `json:"timestamp" binding:"required"`
-	RoomId    int64  `json:"room_id" binding:"required"`
-	Mid       int64  `json:"mid" binding:"required"`
-	Caller    string `json:"caller" binding:"required"`
-	CodeSign  string `json:"code_sign" binding:"required"`
+	Timestamp int64  `json:"timestamp"`
+	RoomId    int64  `json:"room_id"`
+	Mid       int64  `json:"mid"`
+	Caller    string `json:"caller"`
+	CodeSign  string `json:"code_sign"`
 }
 
 type RoomData struct {
