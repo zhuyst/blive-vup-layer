@@ -5,6 +5,7 @@ import Membership from '@/component/Membership.vue'
 import DanmuList from '@/component/DanmuList.vue'
 import ScList from '@/component/ScList.vue'
 import GiftList from '@/component/GiftList.vue'
+import TTSAudio from '@/component/TTSAudio.vue'
 import noFaceSrc from '@/assets/noface.gif'
 
 let protocol = 'ws'
@@ -20,7 +21,7 @@ if (import.meta.env.DEV) {
 }
 
 const store = useStore()
-const { sendMemberShip, sendDanmu, sendSc, sendGift } = store
+const { sendMemberShip, sendDanmu, sendSc, sendGift, sendTTS } = store
 
 const state = reactive({
   is_connect_websocket: false,
@@ -130,6 +131,10 @@ function connectWebSocketServer() {
         sendMemberShip(data.data)
         break
       }
+      case 'tts': {
+        sendTTS(data.data)
+        break
+      }
     }
   })
 }
@@ -166,6 +171,7 @@ onMounted(() => {
       <button class="button" @click="sendSc()">有人发SC</button>
       <button class="button" @click="sendGift()">有人送礼</button>
       <button class="button" @click="sendMemberShip()">有人上舰</button>
+      <button class="button" @click="sendTTS()">测试语音</button>
     </div>
     <Membership />
     <div class="main-container">
@@ -181,6 +187,7 @@ onMounted(() => {
       </div>
       <ScList />
       <GiftList />
+      <TTSAudio />
     </div>
   </main>
 </template>

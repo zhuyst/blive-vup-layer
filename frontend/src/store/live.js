@@ -1,6 +1,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import imgSrc from '@/assets/captain_test_loop_1.webp'
 import noFaceSrc from '@/assets/noface.gif'
+import testTTS from '@/assets/test.wav'
 
 function getUUID() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
@@ -170,7 +171,8 @@ export const useStore = defineStore('live', {
 
     danmu_list: [],
     sc_list: [],
-    gift_list: []
+    gift_list: [],
+    tts_list: []
   }),
   actions: {
     sendMemberShip(data) {
@@ -295,6 +297,14 @@ export const useStore = defineStore('live', {
       if (this.gift_list.length >= 50) {
         this.gift_list.splice(0, 1)
       }
+    },
+    sendTTS(data) {
+      if (!data) {
+        data = {
+          audio_file_path: testTTS
+        }
+      }
+      this.tts_list.push(data)
     }
   }
 })
