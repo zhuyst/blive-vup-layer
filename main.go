@@ -1,7 +1,9 @@
 package main
 
 import (
+	"blive-vup-layer/config"
 	"errors"
+	"flag"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -10,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 )
@@ -29,27 +30,15 @@ func main() {
 	}
 	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
 
-	ak := os.Getenv("ACCESS_KEY")
-	sk := os.Getenv("SECRET_KEY")
-	appIdStr := os.Getenv("APP_ID")
-	if ak == "" || sk == "" || appIdStr == "" {
-		log.Fatalf("Environment variables ACCESS_KEY, SECRET_KEY, APP_ID must be set")
-		return
-	}
-	appId, err := strconv.ParseInt(appIdStr, 10, 64)
+	configFilePath := flag.String("config", "./etc/config-dev.toml", "config file path")
+	flag.Parse()
+	cfg, err := config.ParseConfig(*configFilePath)
 	if err != nil {
-		log.Fatalf("failed to convert APP_ID to int: %v", err)
+		log.Fatalf("failed to parse config file: %v", err)
 		return
 	}
-	disableValidateSignStr := os.Getenv("DISABLE_VALIDATE_SIGN")
-	disableValidateSign, _ := strconv.ParseBool(disableValidateSignStr)
 
-	h := NewHandler(&Config{
-		AccessKey:           ak,
-		SecretKey:           sk,
-		AppId:               appId,
-		DisableValidateSign: disableValidateSign,
-	})
+	h := NewHandler(cfg)
 
 	gin.SetMode(gin.ReleaseMode)
 	g := gin.New()

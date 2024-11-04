@@ -4,9 +4,7 @@ services:
   blive-vup-layer:
     build: .
     restart: always
+    volumes:
+      - etc/config.toml:/etc/config.toml
     ports:
       - "12450:8080"
-    environment:
-      ACCESS_KEY: "TFjBImQxy96VJ1pUITwyu0i2"
-      SECRET_KEY: ""
-      APP_ID: "1696608010956"

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"blive-vup-layer/config"
 	"context"
 	"encoding/json"
 	"errors"
@@ -57,21 +58,14 @@ func HandleImg(c *gin.Context) {
 }
 
 type Handler struct {
-	cfg        *Config
+	cfg        *config.Config
 	liveClient *live.Client
 }
 
-type Config struct {
-	AccessKey           string
-	SecretKey           string
-	AppId               int64
-	DisableValidateSign bool
-}
-
-func NewHandler(cfg *Config) *Handler {
+func NewHandler(cfg *config.Config) *Handler {
 	return &Handler{
 		cfg:        cfg,
-		liveClient: live.NewClient(live.NewConfig(cfg.AccessKey, cfg.SecretKey, cfg.AppId)),
+		liveClient: live.NewClient(live.NewConfig(cfg.BiliBili.AccessKey, cfg.BiliBili.SecretKey, cfg.BiliBili.AppId)),
 	}
 }
 
@@ -312,7 +306,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 					conn.WriteResultError(ResultTypeRoom, CodeBadRequest, err.Error())
 					return
 				}
-				if !h.cfg.DisableValidateSign {
+				if !h.cfg.BiliBili.DisableValidateSign {
 					signParams := live.H5SignatureParams{
 						Timestamp: strconv.FormatInt(initData.Timestamp, 10),
 						Code:      initData.Code,
@@ -321,7 +315,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 
 						CodeSign: initData.CodeSign,
 					}
-					if ok := signParams.ValidateSignature(h.cfg.SecretKey); !ok {
+					if ok := signParams.ValidateSignature(h.cfg.BiliBili.SecretKey); !ok {
 						conn.WriteResultError(ResultTypeRoom, CodeBadRequest, "invalid signature")
 						return
 					}
