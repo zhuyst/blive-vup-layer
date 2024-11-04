@@ -1,5 +1,6 @@
 .idea
 logs
+result
 frontend/node_modules
 frontend/dist
 etc/config-dev.toml

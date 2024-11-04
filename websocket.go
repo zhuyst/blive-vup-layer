@@ -50,12 +50,6 @@ type WebSocketResult struct {
 	Data interface{} `json:"data"`
 }
 
-const (
-	CodeOK            = 0
-	CodeBadRequest    = 400
-	CodeInternalError = 500
-)
-
 func (c *WebSocketConn) WriteResultOK(resultType string, data interface{}) error {
 	return c.WriteResult(&WebSocketResult{
 		Type: resultType,

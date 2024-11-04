@@ -1,12 +1,16 @@
 package config
 
+const (
+	ResultFilePath = "./result/"
+)
+
 type Config struct {
-	QianFang  *QianFangConfig  `toml:"qianfang"`
+	QianFan   *QianFanConfig   `toml:"qianfan"`
 	AliyunTTS *AliyunTTSConfig `toml:"aliyun_tts"`
 	BiliBili  *BiliBiliConfig  `toml:"biliBili"`
 }
 
-type QianFangConfig struct {
+type QianFanConfig struct {
 	AccessKey string `toml:"access_key"`
 	SecretKey string `toml:"secret_key"`
 }

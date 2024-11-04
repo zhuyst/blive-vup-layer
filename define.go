@@ -10,6 +10,8 @@ const (
 	ResultTypeSuperChat = "superchat"
 	ResultTypeGift      = "gift"
 	ResultTypeGuard     = "guard"
+
+	ResultTypeTTS = "tts"
 )
 
 var danmuGiftList = []string{
@@ -112,8 +114,15 @@ type GiftDataComboInfo struct {
 
 type GuardData struct {
 	UserData
-	GuardNum  int    `json:"guard_num"`
-	GuardUnit string `json:"guard_unit"`
-	MsgID     string `json:"msg_id"`
-	Timestamp int    `json:"timestamp"`
+	GuardLevel int    `json:"guard_level"`
+	GuardNum   int    `json:"guard_num"`
+	GuardUnit  string `json:"guard_unit"`
+	MsgID      string `json:"msg_id"`
+	Timestamp  int    `json:"timestamp"`
+}
+
+var GuardLevelMap = map[int]string{
+	1: "总督",
+	2: "提督",
+	3: "舰长",
 }

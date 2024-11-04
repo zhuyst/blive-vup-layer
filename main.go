@@ -38,11 +38,22 @@ func main() {
 		return
 	}
 
-	h := NewHandler(cfg)
+	if err := os.MkdirAll(config.ResultFilePath, 0755); err != nil {
+		log.Fatalf("os.MkdirAll err: %v", err.Error())
+		return
+	}
+
+	h, err := NewHandler(cfg)
+	if err != nil {
+		log.Fatalf("NewHandler err: %v", err.Error())
+		return
+	}
 
 	gin.SetMode(gin.ReleaseMode)
 	g := gin.New()
 	g.Use(gin.Recovery())
+
+	g.Static("./result/", "./result/")
 
 	staticRouter := g.Group("/")
 	staticRouter.Use(func(c *gin.Context) {

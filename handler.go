@@ -2,9 +2,12 @@ package main
 
 import (
 	"blive-vup-layer/config"
+	"blive-vup-layer/llm"
+	"blive-vup-layer/tts"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 	"github.com/vtb-link/bianka/basic"
@@ -60,13 +63,22 @@ func HandleImg(c *gin.Context) {
 type Handler struct {
 	cfg        *config.Config
 	liveClient *live.Client
+
+	LLM *llm.LLM
+	TTS *tts.TTS
 }
 
-func NewHandler(cfg *config.Config) *Handler {
+func NewHandler(cfg *config.Config) (*Handler, error) {
+	t, err := tts.NewTTS(cfg.AliyunTTS)
+	if err != nil {
+		return nil, fmt.Errorf("tts.NewTTS err: %w", err)
+	}
 	return &Handler{
 		cfg:        cfg,
 		liveClient: live.NewClient(live.NewConfig(cfg.BiliBili.AccessKey, cfg.BiliBili.SecretKey, cfg.BiliBili.AppId)),
-	}
+		LLM:        llm.NewLLM(cfg.QianFan),
+		TTS:        t,
+	}, nil
 }
 
 func (h *Handler) WebSocket(c *gin.Context) {
@@ -96,6 +108,22 @@ func (h *Handler) WebSocket(c *gin.Context) {
 			h.liveClient.AppEnd(startResp.GameInfo.GameID)
 		}
 	}()
+
+	ttsQueue := tts.NewTTSQueue(h.TTS)
+	defer ttsQueue.Close()
+	ttsCh := ttsQueue.ListenResult()
+	go func() {
+		for r := range ttsCh {
+			if err := r.Err; err != nil {
+				conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
+				continue
+			}
+			conn.WriteResultOK(ResultTypeTTS, gin.H{
+				"audio_file_path": r.Fname,
+			})
+		}
+	}()
+
 	init := func(code string) {
 		if startResp != nil {
 			conn.WriteResultError(ResultTypeRoom, http.StatusBadRequest, "connection already init")
@@ -187,6 +215,10 @@ func (h *Handler) WebSocket(c *gin.Context) {
 							EmojiImgUrl: d.EmojiImgUrl,
 							DmType:      d.DmType,
 						})
+						input := fmt.Sprintf("%s酱：%s", d.Uname, d.Msg)
+						if err := ttsQueue.Push(input); err != nil {
+							conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
+						}
 						break
 					}
 				case *proto.CmdSuperChatData:
@@ -209,6 +241,10 @@ func (h *Handler) WebSocket(c *gin.Context) {
 							StartTime: d.StartTime,
 							EndTime:   d.EndTime,
 						})
+						input := fmt.Sprintf("谢谢%s酱的醒目留言：%s", d.Uname, d.Message)
+						if err := ttsQueue.Push(input); err != nil {
+							conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
+						}
 						break
 					}
 				case *proto.CmdSendGiftData:
@@ -239,6 +275,10 @@ func (h *Handler) WebSocket(c *gin.Context) {
 								ComboTimeout: d.ComboInfo.ComboTimeout,
 							},
 						})
+						input := fmt.Sprintf("谢谢%s酱赠送的%d个%s，么么哒", d.Uname, d.GiftNum, d.GiftName)
+						if err := ttsQueue.Push(input); err != nil {
+							conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
+						}
 						break
 					}
 				case *proto.CmdGuardData:
@@ -253,11 +293,20 @@ func (h *Handler) WebSocket(c *gin.Context) {
 								FansMedalWearingStatus: d.FansMedalWearingStatus,
 								GuardLevel:             d.GuardLevel,
 							},
-							GuardNum:  d.GuardNum,
-							GuardUnit: d.GuardUnit,
-							Timestamp: d.Timestamp,
-							MsgID:     d.MsgID,
+							GuardLevel: d.GuardLevel,
+							GuardNum:   d.GuardNum,
+							GuardUnit:  d.GuardUnit,
+							Timestamp:  d.Timestamp,
+							MsgID:      d.MsgID,
 						})
+						guardName, ok := GuardLevelMap[d.GuardLevel]
+						if !ok {
+							guardName = "舰长"
+						}
+						input := fmt.Sprintf("谢谢%s酱赠送的%d个%s%s，么么哒", d.UserInfo.Uname, d.GuardNum, d.GuardUnit, guardName)
+						if err := ttsQueue.Push(input); err != nil {
+							conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
+						}
 						break
 					}
 				default:
