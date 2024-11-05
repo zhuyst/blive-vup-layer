@@ -2,9 +2,9 @@ package tts
 
 import (
 	"blive-vup-layer/config"
+	nls "blive-vup-layer/tts/alibabacloud-nls-go-sdk"
 	"errors"
 	"fmt"
-	nls "github.com/aliyun/alibabacloud-nls-go-sdk"
 	uuid "github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 	"io"
@@ -16,10 +16,6 @@ import (
 type TTS struct {
 	cfg *nls.ConnectionConfig
 }
-
-const template = `
-<speak voice="zhimiao_emo" encodeType="wav" sampleRate="48000">%s</speak>
-`
 
 func NewTTS(cfg *config.AliyunTTSConfig) (*TTS, error) {
 	nlsCfg, err := nls.NewConnectionConfigWithAKInfoDefault(nls.DEFAULT_URL, cfg.AppKey, cfg.AccessKey, cfg.SecretKey)
@@ -54,7 +50,15 @@ func (tts *TTS) NewTask(input string) (*Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	param := nls.DefaultSpeechSynthesisParam()
+	param := nls.SpeechSynthesisStartParam{
+		Voice:      "longgui",
+		Format:     "wav",
+		SampleRate: 24000,
+		Volume:     50,
+		SpeechRate: 0,
+		PitchRate:  0,
+	}
+
 	t := &Task{
 		TaskId: taskId,
 		Logger: l,
@@ -62,11 +66,13 @@ func (tts *TTS) NewTask(input string) (*Task, error) {
 		Fname:  fname,
 
 		param: param,
-		text:  fmt.Sprintf(template, input),
+		text:  input,
 	}
 
 	l.Infof("new tts: %s", t.text)
-	ss, err := nls.NewSpeechSynthesis(tts.cfg, nls.DefaultNlsLog(), false,
+	nlsLog := nls.DefaultNlsLog()
+	//nlsLog.SetDebug(true)
+	ss, err := nls.NewSpeechSynthesis(tts.cfg, nlsLog, false,
 		t.onTaskFailed, t.onSynthesisResult, nil,
 		t.onCompleted, t.onClose, param)
 	if err != nil {

@@ -3,18 +3,19 @@ module blive-vup-layer
 go 1.20
 
 require (
+	github.com/aliyun/alibaba-cloud-sdk-go v1.61.1376
 	github.com/aliyun/alibabacloud-nls-go-sdk v1.1.1
 	github.com/baidubce/bce-qianfan-sdk/go/qianfan v0.0.12
 	github.com/gin-gonic/gin v1.9.1
 	github.com/gorilla/websocket v1.5.1
 	github.com/pelletier/go-toml/v2 v2.2.1
+	github.com/satori/go.uuid v1.2.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/vtb-link/bianka v0.2.2
 	go.eigsys.de/gin-cachecontrol/v2 v2.1.0
 )
 
 require (
-	github.com/aliyun/alibaba-cloud-sdk-go v1.61.1376 // indirect
 	github.com/baidubce/bce-sdk-go v0.9.164 // indirect
 	github.com/bytedance/sonic v1.11.6 // indirect
 	github.com/bytedance/sonic/loader v0.1.1 // indirect
@@ -41,7 +42,6 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
-	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.6.0 // indirect
