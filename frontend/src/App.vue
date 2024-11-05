@@ -202,20 +202,7 @@ onMounted(() => {
     code,
     code_sign
   }
-  if (!code) {
-    state.show_popup = true
-    return
-  }
-  if (code === 'test') {
-    console.log('测试模式')
-    state.is_test = true
-    return
-  }
-
-  console.log('身份码code：', code)
-  console.log('身份信息:', init_params)
-
-  connectWebSocketServer()
+  state.show_popup = true
 })
 </script>
 
