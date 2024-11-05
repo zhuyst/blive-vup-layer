@@ -57,7 +57,7 @@ function handleConfirm(code) {
     state.is_test = true
     return
   } else {
-    state.is_test = true
+    state.is_test = false
   }
 
   connectWebSocketServer()
