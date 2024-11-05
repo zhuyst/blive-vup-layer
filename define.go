@@ -12,6 +12,7 @@ const (
 	ResultTypeGuard     = "guard"
 
 	ResultTypeTTS = "tts"
+	ResultTypeLLM = "llm"
 )
 
 var danmuGiftList = []string{

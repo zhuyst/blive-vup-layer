@@ -16,7 +16,9 @@ type TTSQueue struct {
 func NewTTSQueue(tts *TTS) *TTSQueue {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &TTSQueue{
-		tts:    tts,
+		tts: tts,
+		ch:  make(chan *TaskWithChannel, 64),
+
 		ctx:    ctx,
 		cancel: cancel,
 	}

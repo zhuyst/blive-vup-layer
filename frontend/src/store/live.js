@@ -303,8 +303,25 @@ export const useStore = defineStore('live', {
         data = {
           audio_file_path: testTTS
         }
+      } else {
+        data.audio_file_path = 'server/' + data.audio_file_path
       }
       this.tts_list.push(data)
+    },
+    sendLLM(data) {
+      const msg_id = getUUID()
+      const danmu_data = {
+        msg_id: msg_id,
+        uname: '小助手',
+        uface: noFaceSrc,
+
+        fans_medal_name: '巫女酱',
+        fans_medal_level: 0,
+        fans_medal_wearing_status: true,
+
+        msg: data.llm_result
+      }
+      this.sendDanmu(danmu_data)
     }
   }
 })

@@ -124,6 +124,9 @@ func (h *Handler) WebSocket(c *gin.Context) {
 		}
 	}()
 
+	var historyDanmuList []*DanmuData
+	isLlmProcessing := false
+
 	init := func(code string) {
 		if startResp != nil {
 			conn.WriteResultError(ResultTypeRoom, http.StatusBadRequest, "connection already init")
@@ -199,7 +202,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 						if _, ok := danmuGiftMap[d.Msg]; ok {
 							break
 						}
-						conn.WriteResultOK(ResultTypeDanmu, &DanmuData{
+						danmuData := &DanmuData{
 							UserData: UserData{
 								OpenID:                 d.OpenID,
 								Uname:                  d.Uname,
@@ -214,11 +217,41 @@ func (h *Handler) WebSocket(c *gin.Context) {
 							Timestamp:   d.Timestamp,
 							EmojiImgUrl: d.EmojiImgUrl,
 							DmType:      d.DmType,
-						})
+						}
+						historyDanmuList = append(historyDanmuList, danmuData)
+						conn.WriteResultOK(ResultTypeDanmu, danmuData)
 						input := fmt.Sprintf("%s酱：%s", d.Uname, d.Msg)
 						if err := ttsQueue.Push(input); err != nil {
 							conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
 						}
+						msgs := make([]*llm.ChatMessage, len(historyDanmuList))
+						for i := range historyDanmuList {
+							msgs[i] = &llm.ChatMessage{
+								User:    historyDanmuList[i].Uname,
+								Message: historyDanmuList[i].Msg,
+							}
+						}
+						if isLlmProcessing {
+							break
+						}
+						isLlmProcessing = true
+						go func(msgs []*llm.ChatMessage) {
+							defer func() {
+								isLlmProcessing = false
+							}()
+							llmRes, err := h.LLM.ChatWithLLM(context.Background(), msgs)
+							if err != nil {
+								conn.WriteResultError(ResultTypeLLM, CodeInternalError, err.Error())
+								log.Errorf("ChatWithLLM err: %v", err)
+								return
+							}
+							conn.WriteResultOK(ResultTypeLLM, gin.H{
+								"llm_result": llmRes,
+							})
+							if err := ttsQueue.Push(llmRes); err != nil {
+								conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
+							}
+						}(msgs)
 						break
 					}
 				case *proto.CmdSuperChatData:

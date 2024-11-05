@@ -47,6 +47,7 @@ type Task struct {
 
 func (tts *TTS) NewTask(input string) (*Task, error) {
 	taskId := uuid.NewV4().String()
+	l := log.WithField("task_id", uuid.NewV4().String())
 
 	fname := path.Join(config.ResultFilePath, fmt.Sprintf("tts-%s.wav", taskId))
 	fout, err := os.OpenFile(fname, os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0666)
@@ -56,13 +57,15 @@ func (tts *TTS) NewTask(input string) (*Task, error) {
 	param := nls.DefaultSpeechSynthesisParam()
 	t := &Task{
 		TaskId: taskId,
-		Logger: log.WithField("task_id", uuid.NewV4().String()),
+		Logger: l,
 		File:   fout,
+		Fname:  fname,
 
 		param: param,
 		text:  fmt.Sprintf(template, input),
 	}
 
+	l.Infof("new tts: %s", t.text)
 	ss, err := nls.NewSpeechSynthesis(tts.cfg, nls.DefaultNlsLog(), false,
 		t.onTaskFailed, t.onSynthesisResult, nil,
 		t.onCompleted, t.onClose, param)

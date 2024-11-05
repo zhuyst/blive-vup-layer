@@ -1,14 +1,14 @@
 [qianfang]
 access_key = ""
-secrey_key = ""
+secret_key = ""
 
 [aliyun_tts]
 access_key = ""
-secrey_key = ""
+secret_key = ""
 app_key = ""
 
 [bilibili]
 access_key = ""
-secery_key = ""
+secret_key = ""
 app_id = 0
 disable_validate_sign = false

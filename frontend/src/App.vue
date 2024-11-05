@@ -1,29 +1,17 @@
 <script setup>
 import { onMounted, reactive } from 'vue'
 import { useStore } from '@/store/live'
-import Membership from '@/component/Membership.vue'
+// import Membership from '@/component/Membership.vue'
 import DanmuList from '@/component/DanmuList.vue'
 import ScList from '@/component/ScList.vue'
 import GiftList from '@/component/GiftList.vue'
 import TTSAudio from '@/component/TTSAudio.vue'
+import Popup from '@/component/Popup.vue'
 import noFaceSrc from '@/assets/noface.gif'
 
-let protocol = 'ws'
-if (location.protocol === 'https:') {
-  protocol = 'wss'
-}
-
-let serverUrl
-if (import.meta.env.DEV) {
-  serverUrl = protocol + '://localhost:8080/server/ws'
-} else {
-  serverUrl = protocol + '://' + location.host + '/server/ws'
-}
-
-const store = useStore()
-const { sendMemberShip, sendDanmu, sendSc, sendGift, sendTTS } = store
-
 const state = reactive({
+  show_popup: false,
+  is_test: false,
   is_connect_websocket: false,
   is_connect_room: false,
   connect_message: '正在连接至直播间',
@@ -44,6 +32,61 @@ let init_params = {
   code_sign: ''
 }
 
+let heartbeatInterval
+
+function handleConfirm(code) {
+  init_params.code = code
+  state.show_popup = false
+
+  console.log('身份码code：', code)
+  console.log('身份信息:', init_params)
+
+  // 修改URL上的query参数
+  const url = new URL(window.location)
+  url.searchParams.set('Code', code)
+  window.history.pushState({}, '', url)
+
+  if (state.is_connect_websocket) {
+    clearInterval(heartbeatInterval)
+    state.is_connect_websocket = false
+    state.is_connect_room = false
+  }
+
+  if (code === 'test') {
+    console.log('测试模式')
+    state.is_test = true
+    return
+  } else {
+    state.is_test = true
+  }
+
+  connectWebSocketServer()
+}
+
+function handleReenterCode() {
+  // 清空URL上的Code值
+  const url = new URL(window.location)
+  url.searchParams.delete('code')
+  window.history.pushState({}, '', url)
+
+  // 清除localStorage存的savedCode
+  localStorage.removeItem('savedCode')
+
+  // 弹出弹框
+  state.show_popup = true
+}
+
+let protocol = 'ws'
+if (location.protocol === 'https:') {
+  protocol = 'wss'
+}
+
+const serverUrl = protocol + '://' + location.host + '/server/ws'
+console.log(serverUrl)
+
+const store = useStore()
+const { sendMemberShip, sendDanmu, sendSc, sendGift, sendTTS, sendLLM } = store
+
 function connectWebSocketServer() {
   if (state.is_connect_websocket) {
     return
@@ -52,8 +95,6 @@ function connectWebSocketServer() {
     state.connect_message = '请提供身份码'
     return
   }
-
-  let heartbeatInterval
 
   const socket = new WebSocket(serverUrl)
   socket.addEventListener('open', () => {
@@ -135,6 +176,10 @@ function connectWebSocketServer() {
         sendTTS(data.data)
         break
       }
+      case 'llm': {
+        sendLLM(data.data)
+        break
+      }
     }
   })
 }
@@ -157,6 +202,16 @@ onMounted(() => {
     code,
     code_sign
   }
+  if (!code) {
+    state.show_popup = true
+    return
+  }
+  if (code === 'test') {
+    console.log('测试模式')
+    state.is_test = true
+    return
+  }
+
   console.log('身份码code：', code)
   console.log('身份信息:', init_params)
 
@@ -166,14 +221,15 @@ onMounted(() => {
 
 <template>
   <main>
-    <div class="test-buttons">
+    <Popup v-if="state.show_popup" @confirm="handleConfirm" @close="state.show_popup = false" />
+    <div class="test-buttons" v-if="!state.show_popup && state.is_test">
       <button class="button" @click="sendDanmu()">有人发弹幕</button>
       <button class="button" @click="sendSc()">有人发SC</button>
       <button class="button" @click="sendGift()">有人送礼</button>
       <button class="button" @click="sendMemberShip()">有人上舰</button>
       <button class="button" @click="sendTTS()">测试语音</button>
     </div>
-    <Membership />
+    <!-- <Membership /> -->
     <div class="main-container">
       <div class="left-container">
         <div class="status-container">
@@ -182,6 +238,7 @@ onMounted(() => {
             <div class="status-name">{{ state.room_info.uname }}</div>
           </div>
           <div class="status-msg">{{ state.connect_message }}</div>
+          <button @click="handleReenterCode">重新输入身份码</button>
         </div>
         <DanmuList />
       </div>
