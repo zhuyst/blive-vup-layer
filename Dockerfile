@@ -34,4 +34,4 @@ COPY --from=BUILDER2 /usr/src/app/blive-vup-layer /usr/src/app/blive-vup-layer
 
 RUN chmod +x /usr/src/app/blive-vup-layer
 
-CMD ["/usr/src/app/blive-vup-layer", "-config", "/etc/config.toml"]
+ENTRYPOINT ["/usr/src/app/blive-vup-layer", "-config", "/etc/config.toml"]

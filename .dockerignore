@@ -1,0 +1,7 @@
+.idea
+logs
+result
+frontend/node_modules
+frontend/dist
+etc
+docker-compose.yaml

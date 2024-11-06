@@ -300,9 +300,7 @@ export const useStore = defineStore('live', {
     },
     sendTTS(data) {
       if (!data) {
-        data = {
-          audio_file_path: testTTS
-        }
+        return
       }
       this.tts_list.push(data)
     },

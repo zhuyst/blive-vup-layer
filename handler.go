@@ -220,10 +220,19 @@ func (h *Handler) WebSocket(c *gin.Context) {
 						}
 						historyDanmuList = append(historyDanmuList, danmuData)
 						conn.WriteResultOK(ResultTypeDanmu, danmuData)
-						input := fmt.Sprintf("%s酱：%s", d.Uname, d.Msg)
-						if err := ttsQueue.Push(input); err != nil {
+						if err := ttsQueue.Push(&tts.NewTaskParams{
+							Text:      fmt.Sprintf("%s酱说：%s", d.Uname, d.Msg),
+							PitchRate: -100,
+						}); err != nil {
 							conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
 						}
+						if isLlmProcessing &&
+							!danmuData.FansMedalWearingStatus && // 没带粉丝牌
+							danmuData.GuardLevel <= 0 && // 不是舰长
+							danmuData.Uname != "巫女酱子" && danmuData.Uname != "青云-_-z" { // 不是主播本人
+							break
+						}
+
 						msgs := make([]*llm.ChatMessage, len(historyDanmuList))
 						for i := range historyDanmuList {
 							msgs[i] = &llm.ChatMessage{
@@ -231,10 +240,11 @@ func (h *Handler) WebSocket(c *gin.Context) {
 								Message: historyDanmuList[i].Msg,
 							}
 						}
-						if isLlmProcessing {
-							break
-						}
 						isLlmProcessing = true
+						const maxMsg = 5
+						if len(msgs) > maxMsg {
+							msgs = msgs[len(msgs)-maxMsg:]
+						}
 						go func(msgs []*llm.ChatMessage) {
 							defer func() {
 								isLlmProcessing = false
@@ -248,7 +258,9 @@ func (h *Handler) WebSocket(c *gin.Context) {
 							conn.WriteResultOK(ResultTypeLLM, gin.H{
 								"llm_result": llmRes,
 							})
-							if err := ttsQueue.Push(llmRes); err != nil {
+							if err := ttsQueue.Push(&tts.NewTaskParams{
+								Text: llmRes,
+							}); err != nil {
 								conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
 							}
 						}(msgs)
@@ -274,8 +286,9 @@ func (h *Handler) WebSocket(c *gin.Context) {
 							StartTime: d.StartTime,
 							EndTime:   d.EndTime,
 						})
-						input := fmt.Sprintf("谢谢%s酱的醒目留言：%s", d.Uname, d.Message)
-						if err := ttsQueue.Push(input); err != nil {
+						if err := ttsQueue.Push(&tts.NewTaskParams{
+							Text: fmt.Sprintf("谢谢%s酱的醒目留言：%s", d.Uname, d.Message),
+						}); err != nil {
 							conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
 						}
 						break
@@ -308,8 +321,9 @@ func (h *Handler) WebSocket(c *gin.Context) {
 								ComboTimeout: d.ComboInfo.ComboTimeout,
 							},
 						})
-						input := fmt.Sprintf("谢谢%s酱赠送的%d个%s，么么哒", d.Uname, d.GiftNum, d.GiftName)
-						if err := ttsQueue.Push(input); err != nil {
+						if err := ttsQueue.Push(&tts.NewTaskParams{
+							Text: fmt.Sprintf("谢谢%s酱赠送的%d个%s，么么哒", d.Uname, d.GiftNum, d.GiftName),
+						}); err != nil {
 							conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
 						}
 						break
@@ -336,8 +350,9 @@ func (h *Handler) WebSocket(c *gin.Context) {
 						if !ok {
 							guardName = "舰长"
 						}
-						input := fmt.Sprintf("谢谢%s酱赠送的%d个%s%s，么么哒", d.UserInfo.Uname, d.GuardNum, d.GuardUnit, guardName)
-						if err := ttsQueue.Push(input); err != nil {
+						if err := ttsQueue.Push(&tts.NewTaskParams{
+							Text: fmt.Sprintf("谢谢%s酱赠送的%d个%s%s，么么哒", d.UserInfo.Uname, d.GuardNum, d.GuardUnit, guardName),
+						}); err != nil {
 							conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
 						}
 						break

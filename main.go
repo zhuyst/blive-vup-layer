@@ -38,6 +38,7 @@ func main() {
 		return
 	}
 
+	os.RemoveAll(config.ResultFilePath)
 	if err := os.MkdirAll(config.ResultFilePath, 0755); err != nil {
 		log.Fatalf("os.MkdirAll err: %v", err.Error())
 		return

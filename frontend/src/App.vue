@@ -214,7 +214,16 @@ onMounted(() => {
       <button class="button" @click="sendSc()">有人发SC</button>
       <button class="button" @click="sendGift()">有人送礼</button>
       <button class="button" @click="sendMemberShip()">有人上舰</button>
-      <button class="button" @click="sendTTS()">测试语音</button>
+      <button
+        class="button"
+        @click="
+          sendTTS({
+            audio_file_path: testTTS
+          })
+        "
+      >
+        测试语音
+      </button>
     </div>
     <!-- <Membership /> -->
     <div class="main-container">

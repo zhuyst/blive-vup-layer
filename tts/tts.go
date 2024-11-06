@@ -14,18 +14,14 @@ import (
 )
 
 type TTS struct {
-	cfg *nls.ConnectionConfig
+	cfg *config.AliyunTTSConfig
 }
 
 func NewTTS(cfg *config.AliyunTTSConfig) (*TTS, error) {
-	nlsCfg, err := nls.NewConnectionConfigWithAKInfoDefault(nls.DEFAULT_URL, cfg.AppKey, cfg.AccessKey, cfg.SecretKey)
-	if err != nil {
-		return nil, err
-	}
 	if err := os.MkdirAll(config.ResultFilePath, os.ModePerm); err != nil {
 		return nil, err
 	}
-	return &TTS{cfg: nlsCfg}, nil
+	return &TTS{cfg: cfg}, nil
 }
 
 type Task struct {
@@ -41,7 +37,12 @@ type Task struct {
 	speechSynthesis *nls.SpeechSynthesis
 }
 
-func (tts *TTS) NewTask(input string) (*Task, error) {
+type NewTaskParams struct {
+	Text      string
+	PitchRate int
+}
+
+func (tts *TTS) NewTask(params *NewTaskParams) (*Task, error) {
 	taskId := uuid.NewV4().String()
 	l := log.WithField("task_id", uuid.NewV4().String())
 
@@ -51,12 +52,12 @@ func (tts *TTS) NewTask(input string) (*Task, error) {
 		return nil, err
 	}
 	param := nls.SpeechSynthesisStartParam{
-		Voice:      "longgui",
+		Voice:      "voice-3e06127",
 		Format:     "wav",
 		SampleRate: 24000,
 		Volume:     50,
 		SpeechRate: 0,
-		PitchRate:  0,
+		PitchRate:  params.PitchRate,
 	}
 
 	t := &Task{
@@ -66,13 +67,23 @@ func (tts *TTS) NewTask(input string) (*Task, error) {
 		Fname:  fname,
 
 		param: param,
-		text:  input,
+		text:  params.Text,
 	}
 
 	l.Infof("new tts: %s", t.text)
 	nlsLog := nls.DefaultNlsLog()
 	//nlsLog.SetDebug(true)
-	ss, err := nls.NewSpeechSynthesis(tts.cfg, nlsLog, false,
+
+	nlsCfg, err := nls.NewConnectionConfigWithAKInfoDefault(
+		nls.DEFAULT_URL,
+		tts.cfg.AppKey, tts.cfg.AccessKey, tts.cfg.SecretKey,
+	)
+	if err != nil {
+		log.Errorf("NewConnectionConfigWithAKInfoDefault err: %v", err)
+		return nil, err
+	}
+
+	ss, err := nls.NewSpeechSynthesis(nlsCfg, nlsLog, false,
 		t.onTaskFailed, t.onSynthesisResult, nil,
 		t.onCompleted, t.onClose, param)
 	if err != nil {
@@ -100,6 +111,13 @@ func (task *Task) Run() (string, error) {
 	}
 	task.Logger.Infof("Synthesis done")
 	task.speechSynthesis.Shutdown()
+
+	go func() {
+		cleanTimer := time.NewTimer(time.Hour)
+		defer cleanTimer.Stop()
+		<-cleanTimer.C
+		os.Remove(task.Fname)
+	}()
 
 	return task.Fname, nil
 }

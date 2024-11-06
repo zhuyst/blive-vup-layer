@@ -29,8 +29,8 @@ type TaskWithChannel struct {
 	Done chan struct{}
 }
 
-func (q *TTSQueue) Push(input string) error {
-	task, err := q.tts.NewTask(input)
+func (q *TTSQueue) Push(params *NewTaskParams) error {
+	task, err := q.tts.NewTask(params)
 	if err != nil {
 		return fmt.Errorf("NewTask err: %w", err)
 	}
