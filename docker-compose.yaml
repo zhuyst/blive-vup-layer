@@ -5,7 +5,7 @@ services:
     build: .
     restart: always
     volumes:
-      - ./result:/usr/src/app/
+      - ./result:/usr/src/app/result
       - ./etc/config.toml:/etc/config.toml
     ports:
       - "12450:8080"
