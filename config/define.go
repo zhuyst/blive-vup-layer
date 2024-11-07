@@ -13,6 +13,7 @@ type Config struct {
 type QianFanConfig struct {
 	AccessKey string `toml:"access_key"`
 	SecretKey string `toml:"secret_key"`
+	Prompt    string `toml:"prompt"`
 }
 
 type AliyunTTSConfig struct {
