@@ -299,18 +299,18 @@ func (h *Handler) WebSocket(c *gin.Context) {
 							PitchRate: pitchRate,
 						}, false)
 
-						if isLlmProcessing {
-							break
-						}
-
-						//if isLlmProcessing &&
-						//	!danmuData.FansMedalWearingStatus && // 没带粉丝牌
-						//	danmuData.FansMedalName != "巫女酱" &&
-						//	danmuData.FansMedalLevel < 10 &&
-						//	danmuData.GuardLevel <= 0 && // 不是舰长
-						//	danmuData.Uname != "巫女酱子" && danmuData.Uname != "青云-_-z" {
+						//if isLlmProcessing {
 						//	break
 						//}
+
+						if isLlmProcessing &&
+							!danmuData.FansMedalWearingStatus && // 没带粉丝牌
+							danmuData.FansMedalName != "巫女酱" &&
+							danmuData.FansMedalLevel < 10 &&
+							danmuData.GuardLevel <= 0 && // 不是舰长
+							danmuData.Uname != "巫女酱子" && danmuData.Uname != "青云-_-z" {
+							break
+						}
 
 						startLlmReply()
 						break
