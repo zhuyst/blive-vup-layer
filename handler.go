@@ -161,13 +161,13 @@ func (h *Handler) WebSocket(c *gin.Context) {
 		isLlmProcessing = true
 
 		var msgs []*llm.ChatMessage
-		for i := len(historyMsgList) - 1; i >= 0; i-- {
-			msg := historyMsgList[i]
+		for _, msg := range historyMsgList {
 			if time.Since(msg.Timestamp) > expireDuration {
-				break
+				continue
 			}
 			msgs = append(msgs, msg)
 		}
+		historyMsgList = msgs
 
 		go func(msgs []*llm.ChatMessage) {
 			defer func() {

@@ -71,7 +71,8 @@ func (llm *LLM) ChatWithLLM(ctx context.Context, messages []*ChatMessage) (strin
 	}
 
 	result := resp.Result
-	result = strings.ReplaceAll(result, "喔~", "喵~")
+	result = strings.ReplaceAll(result, "喔~", "喵")
+	result = strings.ReplaceAll(result, "~", "")
 	log.Infof("LLM result: %s", result)
 	return result, nil
 }
