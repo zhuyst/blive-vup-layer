@@ -5,6 +5,7 @@ import { useStore } from '@/store/live'
 import DanmuList from '@/component/DanmuList.vue'
 import ScList from '@/component/ScList.vue'
 import GiftList from '@/component/GiftList.vue'
+import EnterRoomList from '@/component/EnterRoomList.vue'
 import TTSAudio from '@/component/TTSAudio.vue'
 import Popup from '@/component/Popup.vue'
 import noFaceSrc from '@/assets/noface.gif'
@@ -15,6 +16,10 @@ const state = reactive({
   is_connect_websocket: false,
   is_connect_room: false,
   connect_message: '正在连接至直播间',
+
+  cfg: {
+    disable_llm: false
+  },
 
   room_info: {
     room_id: 0,
@@ -85,8 +90,9 @@ const serverUrl = protocol + '://' + location.host + '/server/ws'
 console.log(serverUrl)
 
 const store = useStore()
-const { sendMemberShip, sendDanmu, sendSc, sendGift, sendTTS, sendLLM } = store
+const { sendMemberShip, sendDanmu, sendSc, sendGift, sendTTS, sendLLM, sendEnterRoom } = store
 
+let socket = new WebSocket(serverUrl)
 function connectWebSocketServer() {
   if (state.is_connect_websocket) {
     return
@@ -96,7 +102,7 @@ function connectWebSocketServer() {
     return
   }
 
-  const socket = new WebSocket(serverUrl)
+  socket = new WebSocket(serverUrl)
   socket.addEventListener('open', () => {
     console.log('[WebSocket]成功建立连接')
 
@@ -105,7 +111,10 @@ function connectWebSocketServer() {
     socket.send(
       JSON.stringify({
         type: 'init',
-        data: init_params
+        data: {
+          ...init_params,
+          config: state.cfg
+        }
       })
     )
   })
@@ -180,8 +189,21 @@ function connectWebSocketServer() {
         sendLLM(data.data)
         break
       }
+      case 'enter_room': {
+        sendEnterRoom(data.data)
+      }
     }
   })
+}
+
+function handleDisableLlmChange() {
+  console.log('config changed: ', JSON.stringify(state.cfg))
+  socket.send(
+    JSON.stringify({
+      type: 'config',
+      data: state.cfg
+    })
+  )
 }
 
 onMounted(() => {
@@ -235,10 +257,20 @@ onMounted(() => {
           </div>
           <div class="status-msg">{{ state.connect_message }}</div>
           <button @click="handleReenterCode">重新输入身份码</button>
+          <label for="disable_llm">关闭大模型</label>
+          <input
+            type="checkbox"
+            id="disable_llm"
+            v-model="state.cfg.disable_llm"
+            @change="handleDisableLlmChange"
+          />
         </div>
         <DanmuList />
       </div>
-      <ScList />
+      <div class="center">
+        <EnterRoomList />
+        <ScList />
+      </div>
       <GiftList />
       <TTSAudio />
     </div>
@@ -283,6 +315,12 @@ onMounted(() => {
   height: 24px;
   border-radius: 24px;
   margin-right: 5px;
+}
+
+.center {
+  width: 30%;
+  margin: 3%;
+  padding: 10px;
 }
 
 .status-name {

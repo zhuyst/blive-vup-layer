@@ -8,6 +8,7 @@ import (
 	"github.com/baidubce/bce-qianfan-sdk/go/qianfan"
 	log "github.com/sirupsen/logrus"
 	"strings"
+	"time"
 )
 
 type LLM struct {
@@ -28,8 +29,9 @@ func NewLLM(config *config.QianFanConfig) *LLM {
 }
 
 type ChatMessage struct {
-	User    string
-	Message string
+	User      string
+	Message   string
+	Timestamp time.Time
 }
 
 func (msg *ChatMessage) String() string {
@@ -69,6 +71,7 @@ func (llm *LLM) ChatWithLLM(ctx context.Context, messages []*ChatMessage) (strin
 	}
 
 	result := resp.Result
+	result = strings.ReplaceAll(result, "喔~", "喵~")
 	log.Infof("LLM result: %s", result)
 	return result, nil
 }

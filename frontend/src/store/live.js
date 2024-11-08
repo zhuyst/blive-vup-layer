@@ -172,7 +172,8 @@ export const useStore = defineStore('live', {
     danmu_list: [],
     sc_list: [],
     gift_list: [],
-    tts_list: []
+    tts_list: [],
+    enter_room_list: []
   }),
   actions: {
     sendMemberShip(data) {
@@ -318,6 +319,9 @@ export const useStore = defineStore('live', {
         msg: data.llm_result
       }
       this.sendDanmu(danmu_data)
+    },
+    sendEnterRoom(data) {
+      this.enter_room_list.push(data)
     }
   }
 })

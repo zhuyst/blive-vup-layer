@@ -66,6 +66,33 @@ export default {
   margin-bottom: 20px;
 
   animation: fadeInFromLeft 1s;
+
+  text-shadow:
+    -2px -2px #000000,
+    -2px -1px #000000,
+    -2px 0px #000000,
+    -2px 1px #000000,
+    -2px 2px #000000,
+    -1px -2px #000000,
+    -1px -1px #000000,
+    -1px 0px #000000,
+    -1px 1px #000000,
+    -1px 2px #000000,
+    0px -2px #000000,
+    0px -1px #000000,
+    0px 0px #000000,
+    0px 1px #000000,
+    0px 2px #000000,
+    1px -2px #000000,
+    1px -1px #000000,
+    1px 0px #000000,
+    1px 1px #000000,
+    1px 2px #000000,
+    2px -2px #000000,
+    2px -1px #000000,
+    2px 0px #000000,
+    2px 1px #000000,
+    2px 2px #000000;
 }
 
 .gift-header {

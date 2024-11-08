@@ -50,9 +50,9 @@ export default {
 
 <style sroped>
 .sc-list-container {
-  width: 30%;
-  margin: 3%;
-  padding: 10px;
+  width: 100%;
+  height: 50%;
+  overflow-y: hidden;
 }
 
 .sc-list {
@@ -65,6 +65,33 @@ export default {
 .sc-item {
   width: 100%;
   margin-bottom: 20px;
+
+  text-shadow:
+    -2px -2px #000000,
+    -2px -1px #000000,
+    -2px 0px #000000,
+    -2px 1px #000000,
+    -2px 2px #000000,
+    -1px -2px #000000,
+    -1px -1px #000000,
+    -1px 0px #000000,
+    -1px 1px #000000,
+    -1px 2px #000000,
+    0px -2px #000000,
+    0px -1px #000000,
+    0px 0px #000000,
+    0px 1px #000000,
+    0px 2px #000000,
+    1px -2px #000000,
+    1px -1px #000000,
+    1px 0px #000000,
+    1px 1px #000000,
+    1px 2px #000000,
+    2px -2px #000000,
+    2px -1px #000000,
+    2px 0px #000000,
+    2px 1px #000000,
+    2px 2px #000000;
 }
 
 .sc-item.fade-in {

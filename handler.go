@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -81,6 +82,17 @@ func NewHandler(cfg *config.Config) (*Handler, error) {
 	}, nil
 }
 
+type GiftWithTimer struct {
+	Uname    string
+	GiftName string
+	GiftNum  int
+	Timer    *time.Timer
+}
+
+type LiveConfig struct {
+	DisableLlm bool `json:"disable_llm"`
+}
+
 func (h *Handler) WebSocket(c *gin.Context) {
 	conn, err := NewWebSocketConn(c)
 	if err != nil {
@@ -109,6 +121,11 @@ func (h *Handler) WebSocket(c *gin.Context) {
 		}
 	}()
 
+	isLiving := true
+	livingCfg := LiveConfig{
+		DisableLlm: false,
+	}
+
 	ttsQueue := tts.NewTTSQueue(h.TTS)
 	defer ttsQueue.Close()
 	ttsCh := ttsQueue.ListenResult()
@@ -123,9 +140,56 @@ func (h *Handler) WebSocket(c *gin.Context) {
 			})
 		}
 	}()
+	pushTTS := func(params *tts.NewTaskParams, force bool) {
+		if !isLiving && !force {
+			return
+		}
+		if err := ttsQueue.Push(params); err != nil {
+			conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
+		}
+	}
 
-	var historyDanmuList []*DanmuData
+	var historyMsgList []*llm.ChatMessage
 	isLlmProcessing := false
+	startLlmReply := func() {
+		if !isLiving || livingCfg.DisableLlm {
+			return
+		}
+
+		const expireDuration = 10 * time.Minute
+
+		isLlmProcessing = true
+
+		var msgs []*llm.ChatMessage
+		for i := len(historyMsgList) - 1; i >= 0; i-- {
+			msg := historyMsgList[i]
+			if time.Since(msg.Timestamp) > expireDuration {
+				break
+			}
+			msgs = append(msgs, msg)
+		}
+
+		go func(msgs []*llm.ChatMessage) {
+			defer func() {
+				isLlmProcessing = false
+			}()
+			llmRes, err := h.LLM.ChatWithLLM(context.Background(), msgs)
+			if err != nil {
+				conn.WriteResultError(ResultTypeLLM, CodeInternalError, err.Error())
+				log.Errorf("ChatWithLLM err: %v", err)
+				return
+			}
+			conn.WriteResultOK(ResultTypeLLM, gin.H{
+				"llm_result": llmRes,
+			})
+			pushTTS(&tts.NewTaskParams{
+				Text: llmRes,
+			}, false)
+		}(msgs)
+	}
+
+	giftTimerMap := make(map[string]*GiftWithTimer)
+	var giftTimerMapMutex sync.RWMutex
 
 	init := func(code string) {
 		if startResp != nil {
@@ -189,7 +253,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 				log.Infof(string(msg.Payload()))
 
 				// 自动解析
-				_, data, err := proto.AutomaticParsingMessageCommand(msg.Payload())
+				cmd, data, err := proto.AutomaticParsingMessageCommand(msg.Payload())
 				if err != nil {
 					log.Errorf("proto.AutomaticParsingMessageCommand err: %v", err)
 					return err
@@ -218,57 +282,42 @@ func (h *Handler) WebSocket(c *gin.Context) {
 							EmojiImgUrl: d.EmojiImgUrl,
 							DmType:      d.DmType,
 						}
-						historyDanmuList = append(historyDanmuList, danmuData)
 						conn.WriteResultOK(ResultTypeDanmu, danmuData)
-						if err := ttsQueue.Push(&tts.NewTaskParams{
-							Text:      fmt.Sprintf("%s酱说：%s", d.Uname, d.Msg),
-							PitchRate: -100,
-						}); err != nil {
-							conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
+
+						historyMsgList = append(historyMsgList, &llm.ChatMessage{
+							User:      danmuData.Uname,
+							Message:   danmuData.Msg,
+							Timestamp: time.Now(),
+						})
+
+						pitchRate := 0
+						if !livingCfg.DisableLlm {
+							pitchRate = -100
 						}
-						if isLlmProcessing &&
-							!danmuData.FansMedalWearingStatus && // 没带粉丝牌
-							danmuData.GuardLevel <= 0 && // 不是舰长
-							danmuData.Uname != "巫女酱子" && danmuData.Uname != "青云-_-z" { // 不是主播本人
+						pushTTS(&tts.NewTaskParams{
+							Text:      fmt.Sprintf("%s说：%s", d.Uname, d.Msg),
+							PitchRate: pitchRate,
+						}, false)
+
+						if isLlmProcessing {
 							break
 						}
 
-						msgs := make([]*llm.ChatMessage, len(historyDanmuList))
-						for i := range historyDanmuList {
-							msgs[i] = &llm.ChatMessage{
-								User:    historyDanmuList[i].Uname,
-								Message: historyDanmuList[i].Msg,
-							}
-						}
-						isLlmProcessing = true
-						const maxMsg = 5
-						if len(msgs) > maxMsg {
-							msgs = msgs[len(msgs)-maxMsg:]
-						}
-						go func(msgs []*llm.ChatMessage) {
-							defer func() {
-								isLlmProcessing = false
-							}()
-							llmRes, err := h.LLM.ChatWithLLM(context.Background(), msgs)
-							if err != nil {
-								conn.WriteResultError(ResultTypeLLM, CodeInternalError, err.Error())
-								log.Errorf("ChatWithLLM err: %v", err)
-								return
-							}
-							conn.WriteResultOK(ResultTypeLLM, gin.H{
-								"llm_result": llmRes,
-							})
-							if err := ttsQueue.Push(&tts.NewTaskParams{
-								Text: llmRes,
-							}); err != nil {
-								conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
-							}
-						}(msgs)
+						//if isLlmProcessing &&
+						//	!danmuData.FansMedalWearingStatus && // 没带粉丝牌
+						//	danmuData.FansMedalName != "巫女酱" &&
+						//	danmuData.FansMedalLevel < 10 &&
+						//	danmuData.GuardLevel <= 0 && // 不是舰长
+						//	danmuData.Uname != "巫女酱子" && danmuData.Uname != "青云-_-z" {
+						//	break
+						//}
+
+						startLlmReply()
 						break
 					}
 				case *proto.CmdSuperChatData:
 					{
-						conn.WriteResultOK(ResultTypeSuperChat, &SuperChatData{
+						scData := &SuperChatData{
 							UserData: UserData{
 								OpenID:                 d.OpenID,
 								Uname:                  d.Uname,
@@ -285,12 +334,17 @@ func (h *Handler) WebSocket(c *gin.Context) {
 							Timestamp: d.Timestamp,
 							StartTime: d.StartTime,
 							EndTime:   d.EndTime,
-						})
-						if err := ttsQueue.Push(&tts.NewTaskParams{
-							Text: fmt.Sprintf("谢谢%s酱的醒目留言：%s", d.Uname, d.Message),
-						}); err != nil {
-							conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
 						}
+						conn.WriteResultOK(ResultTypeSuperChat, scData)
+						historyMsgList = append(historyMsgList, &llm.ChatMessage{
+							User:      scData.Uname,
+							Message:   scData.Msg,
+							Timestamp: time.Now(),
+						})
+						pushTTS(&tts.NewTaskParams{
+							Text: fmt.Sprintf("谢谢%s酱的醒目留言：%s", d.Uname, d.Message),
+						}, false)
+						startLlmReply()
 						break
 					}
 				case *proto.CmdSendGiftData:
@@ -321,11 +375,41 @@ func (h *Handler) WebSocket(c *gin.Context) {
 								ComboTimeout: d.ComboInfo.ComboTimeout,
 							},
 						})
-						if err := ttsQueue.Push(&tts.NewTaskParams{
-							Text: fmt.Sprintf("谢谢%s酱赠送的%d个%s，么么哒", d.Uname, d.GiftNum, d.GiftName),
-						}); err != nil {
-							conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
+
+						const comboDuration = 4 * time.Second
+						key := fmt.Sprintf("%s-%d", d.OpenID, d.GiftID)
+
+						giftTimerMapMutex.RLock()
+						gt, ok := giftTimerMap[key]
+						giftTimerMapMutex.RUnlock()
+						if ok {
+							gt.GiftNum += d.GiftNum
+							gt.Timer.Reset(comboDuration)
+							break
 						}
+
+						gt = &GiftWithTimer{
+							Uname:    d.Uname,
+							GiftNum:  d.GiftNum,
+							GiftName: d.GiftName,
+							Timer:    time.NewTimer(comboDuration),
+						}
+
+						giftTimerMapMutex.Lock()
+						giftTimerMap[key] = gt
+						giftTimerMapMutex.Unlock()
+						go func() {
+							defer gt.Timer.Stop()
+							<-gt.Timer.C
+
+							giftTimerMapMutex.Lock()
+							delete(giftTimerMap, key)
+							giftTimerMapMutex.Unlock()
+
+							pushTTS(&tts.NewTaskParams{
+								Text: fmt.Sprintf("谢谢%s酱赠送的%d个%s 么么哒", gt.Uname, gt.GiftNum, gt.GiftName),
+							}, false)
+						}()
 						break
 					}
 				case *proto.CmdGuardData:
@@ -350,12 +434,58 @@ func (h *Handler) WebSocket(c *gin.Context) {
 						if !ok {
 							guardName = "舰长"
 						}
-						if err := ttsQueue.Push(&tts.NewTaskParams{
+						pushTTS(&tts.NewTaskParams{
 							Text: fmt.Sprintf("谢谢%s酱赠送的%d个%s%s，么么哒", d.UserInfo.Uname, d.GuardNum, d.GuardUnit, guardName),
-						}); err != nil {
-							conn.WriteResultError(ResultTypeTTS, CodeInternalError, err.Error())
-						}
+						}, false)
 						break
+					}
+				case map[string]interface{}:
+					{
+						switch cmd {
+						case CmdLiveStart:
+							{
+								pushTTS(&tts.NewTaskParams{
+									Text: "主人开始直播啦，弹幕姬启动！",
+								}, true)
+								isLiving = true
+								break
+							}
+						case CmdLiveEnd:
+							{
+								pushTTS(&tts.NewTaskParams{
+									Text: "主人直播结束啦，今天辛苦了！",
+								}, true)
+								isLiving = false
+								break
+							}
+						case CmdLiveRoomEnter:
+							{
+								var dd CmdRoomEnterData
+								if err := MapToStruct(d, &dd); err != nil {
+									log.Errorf("MapToStruct err: %v", err)
+									break
+								}
+
+								conn.WriteResultOK(ResultTypeEnterRoom, &RoomEnterData{
+									UserData: UserData{
+										OpenID: dd.OpenId,
+										Uname:  dd.Uname,
+										UFace:  dd.Uface,
+									},
+									Timestamp: dd.Timestamp,
+								})
+
+								//pushTTS(&tts.NewTaskParams{
+								//	Text: fmt.Sprintf("欢迎%s酱进入直播间", dd.Uname),
+								//}, false)
+
+								break
+							}
+						default:
+							{
+								break
+							}
+						}
 					}
 				default:
 					{
@@ -417,8 +547,26 @@ func (h *Handler) WebSocket(c *gin.Context) {
 						return
 					}
 				}
+
+				livingCfg = initData.Config
+				conn.WriteResultOK(ResultTypeConfig, livingCfg)
+
 				init(initData.Code)
 				break
+			}
+		case RequestTypeConfig:
+			{
+				if req.Data == nil {
+					conn.WriteResultError(ResultTypeConfig, CodeBadRequest, "data is null")
+					return
+				}
+				var configData LiveConfig
+				if err := json.Unmarshal(req.Data, &configData); err != nil {
+					conn.WriteResultError(ResultTypeConfig, CodeBadRequest, err.Error())
+					return
+				}
+				livingCfg = configData
+				conn.WriteResultOK(ResultTypeConfig, livingCfg)
 			}
 		case RequestTypeHeartbeat:
 			{

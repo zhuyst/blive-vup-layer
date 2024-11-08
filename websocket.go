@@ -73,7 +73,9 @@ func (c *WebSocketConn) WriteResult(res *WebSocketResult) error {
 
 	msg, _ := json.Marshal(res)
 	if res.Code == CodeOK {
-		log.Infof("write result type: %s, code: %d, data: %s", res.Type, res.Code, msg)
+		if res.Type != ResultTypeHeartbeat {
+			log.Infof("write result type: %s, code: %d, data: %s", res.Type, res.Code, msg)
+		}
 	} else {
 		log.Errorf("write result type: %s, code: %d, data: %s", res.Type, res.Code, msg)
 	}

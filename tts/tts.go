@@ -8,6 +8,7 @@ import (
 	uuid "github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 	"io"
+	syslog "log"
 	"os"
 	"path"
 	"time"
@@ -56,7 +57,7 @@ func (tts *TTS) NewTask(params *NewTaskParams) (*Task, error) {
 		Format:     "wav",
 		SampleRate: 24000,
 		Volume:     50,
-		SpeechRate: 0,
+		SpeechRate: -100,
 		PitchRate:  params.PitchRate,
 	}
 
@@ -71,7 +72,7 @@ func (tts *TTS) NewTask(params *NewTaskParams) (*Task, error) {
 	}
 
 	l.Infof("new tts: %s", t.text)
-	nlsLog := nls.DefaultNlsLog()
+	nlsLog := nls.NewNlsLogger(io.Discard, "NLS", syslog.LstdFlags|syslog.Lmicroseconds)
 	//nlsLog.SetDebug(true)
 
 	nlsCfg, err := nls.NewConnectionConfigWithAKInfoDefault(

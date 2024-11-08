@@ -3,16 +3,23 @@ package main
 const (
 	RequestTypeInit      = "init"
 	RequestTypeHeartbeat = "heartbeat"
+	RequestTypeConfig    = "config"
 
 	ResultTypeHeartbeat = "heartbeat"
 	ResultTypeRoom      = "room"
+	ResultTypeConfig    = "config"
 	ResultTypeDanmu     = "danmu"
 	ResultTypeSuperChat = "superchat"
 	ResultTypeGift      = "gift"
 	ResultTypeGuard     = "guard"
+	ResultTypeEnterRoom = "enter_room"
 
 	ResultTypeTTS = "tts"
 	ResultTypeLLM = "llm"
+
+	CmdLiveRoomEnter = "LIVE_OPEN_PLATFORM_LIVE_ROOM_ENTER"
+	CmdLiveStart     = "LIVE_OPEN_PLATFORM_LIVE_START"
+	CmdLiveEnd       = "LIVE_OPEN_PLATFORM_LIVE_END"
 )
 
 var danmuGiftList = []string{
@@ -48,12 +55,13 @@ func init() {
 }
 
 type InitRequestData struct {
-	Code      string `json:"code" binding:"required"`
-	Timestamp int64  `json:"timestamp"`
-	RoomId    int64  `json:"room_id"`
-	Mid       int64  `json:"mid"`
-	Caller    string `json:"caller"`
-	CodeSign  string `json:"code_sign"`
+	Code      string     `json:"code" binding:"required"`
+	Timestamp int64      `json:"timestamp"`
+	RoomId    int64      `json:"room_id"`
+	Mid       int64      `json:"mid"`
+	Caller    string     `json:"caller"`
+	CodeSign  string     `json:"code_sign"`
+	Config    LiveConfig `json:"config"`
 }
 
 type RoomData struct {
@@ -120,6 +128,19 @@ type GuardData struct {
 	GuardUnit  string `json:"guard_unit"`
 	MsgID      string `json:"msg_id"`
 	Timestamp  int    `json:"timestamp"`
+}
+
+type CmdRoomEnterData struct {
+	RoomId    int64  `json:"room_id"`
+	Uface     string `json:"uface"`
+	Uname     string `json:"uname"`
+	OpenId    string `json:"open_id"`
+	Timestamp int    `json:"timestamp"`
+}
+
+type RoomEnterData struct {
+	UserData
+	Timestamp int `json:"timestamp"`
 }
 
 var GuardLevelMap = map[int]string{
