@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -85,7 +86,7 @@ func NewHandler(cfg *config.Config) (*Handler, error) {
 type GiftWithTimer struct {
 	Uname    string
 	GiftName string
-	GiftNum  int
+	GiftNum  int32
 	Timer    *time.Timer
 }
 
@@ -381,14 +382,14 @@ func (h *Handler) WebSocket(c *gin.Context) {
 						gt, ok := giftTimerMap[key]
 						giftTimerMapMutex.RUnlock()
 						if ok {
-							gt.GiftNum += d.GiftNum
+							atomic.AddInt32(&gt.GiftNum, int32(d.GiftNum))
 							gt.Timer.Reset(comboDuration)
 							break
 						}
 
 						gt = &GiftWithTimer{
 							Uname:    d.Uname,
-							GiftNum:  d.GiftNum,
+							GiftNum:  int32(d.GiftNum),
 							GiftName: d.GiftName,
 							Timer:    time.NewTimer(comboDuration),
 						}
@@ -396,7 +397,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 						giftTimerMapMutex.Lock()
 						giftTimerMap[key] = gt
 						giftTimerMapMutex.Unlock()
-						go func() {
+						go func(gt *GiftWithTimer) {
 							defer gt.Timer.Stop()
 							<-gt.Timer.C
 
@@ -404,10 +405,11 @@ func (h *Handler) WebSocket(c *gin.Context) {
 							delete(giftTimerMap, key)
 							giftTimerMapMutex.Unlock()
 
+							giftNum := atomic.LoadInt32(&gt.GiftNum)
 							pushTTS(&tts.NewTaskParams{
-								Text: fmt.Sprintf("谢谢%s酱赠送的%d个%s 么么哒", gt.Uname, gt.GiftNum, gt.GiftName),
+								Text: fmt.Sprintf("谢谢%s酱赠送的%d个%s 么么哒", gt.Uname, giftNum, gt.GiftName),
 							}, false)
-						}()
+						}(gt)
 						break
 					}
 				case *proto.CmdGuardData:
