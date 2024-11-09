@@ -57,7 +57,9 @@ func (llm *LLM) ChatWithLLM(ctx context.Context, messages []*ChatMessage) (strin
 	resp, err := llm.chatCompletion.Do(
 		ctx,
 		&qianfan.ChatCompletionRequest{
-			System: llm.cfg.Prompt,
+			System:      llm.cfg.Prompt,
+			Temperature: 0.5,
+			TopP:        0.5,
 			Messages: []qianfan.ChatCompletionMessage{
 				qianfan.ChatCompletionUserMessage(content),
 			},

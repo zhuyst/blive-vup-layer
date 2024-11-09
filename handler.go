@@ -10,12 +10,15 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/hashicorp/golang-lru/v2/expirable"
+	uuid "github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/vtb-link/bianka/basic"
 	"github.com/vtb-link/bianka/live"
 	"github.com/vtb-link/bianka/proto"
 	"golang.org/x/exp/slog"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -31,8 +34,23 @@ const (
 	LlmReplyFansMedalLevel     = 10 // 可以触发大模型响应的最小粉丝牌等级
 	RoomEnterTTSFansMedalLevel = 15 // 可以触发进入直播间TTS提示的最小粉丝牌等级
 
-	GiftComboDuration  = 4 * time.Second  // 礼物连击时间，连击结束后会合并播放TTS
-	LlmHistoryDuration = 10 * time.Minute // 大模型使用历史弹幕去理解上下文的时间范围
+	MessageExpiration     = 15 * time.Minute // 历史消息过期时间
+	GiftComboDuration     = 4 * time.Second  // 礼物连击时间，连击结束后会合并播放TTS
+	LlmHistoryDuration    = 10 * time.Minute // 大模型使用历史弹幕去理解上下文的时间范围
+	LastEnterUserDuration = 10 * time.Minute // 最后一个进入直播间用户将会播放TTS的等待时间
+
+	DisableLlmByUserCountDuration = 1 * time.Minute // 统计间隔时间内用户数量，用于触发暂停大模型
+	DisableLlmByUserCount         = 5               // 触发暂停大模型的用户数量
+
+	LlmReplyLimitDuration = 5 * time.Minute // 大模型最大回复数量的统计时间
+	LlmReplyLimitCount    = 10              // 大模型统计窗口内最大的回复数量
+
+	ProbabilityLlmTriggerDuration    = 5 * time.Minute // 概率触发大模型回复的统计时间
+	ProbabilityLlmTriggerLevel1      = 0.0             // 100%触发
+	ProbabilityLlmTriggerLevel1Count = 0               // 统计人数为0
+	ProbabilityLlmTriggerLevel2      = 0.3             // 70%触发
+	ProbabilityLlmTriggerLevel2Count = 10              // 统计人数为[1, 10]
+	ProbabilityLlmTriggerLevel3      = 0.7             // 30%触发
 )
 
 func HandleImg(c *gin.Context) {
@@ -116,6 +134,7 @@ type LiveConfig struct {
 }
 
 type ChatMessage struct {
+	OpenId    string
 	User      string
 	Message   string
 	Timestamp time.Time
@@ -154,6 +173,10 @@ func (h *Handler) WebSocket(c *gin.Context) {
 		DisableLlm: false,
 	}
 
+	var lastEnterUser *UserData = nil
+	lastEnterUserTimer := time.NewTimer(LastEnterUserDuration)
+	defer lastEnterUserTimer.Stop()
+
 	ttsQueue := tts.NewTTSQueue(h.TTS)
 	defer ttsQueue.Close()
 	ttsCh := ttsQueue.ListenResult()
@@ -166,6 +189,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 			conn.WriteResultOK(ResultTypeTTS, gin.H{
 				"audio_file_path": r.Fname,
 			})
+			lastEnterUserTimer.Reset(LastEnterUserDuration)
 		}
 	}()
 	pushTTS := func(params *tts.NewTaskParams, force bool) {
@@ -177,29 +201,80 @@ func (h *Handler) WebSocket(c *gin.Context) {
 		}
 	}
 
-	var historyMsgList []*ChatMessage
+	go func() {
+		for range lastEnterUserTimer.C {
+			if lastEnterUser == nil {
+				lastEnterUserTimer.Reset(LastEnterUserDuration)
+				continue
+			}
+			pushTTS(&tts.NewTaskParams{
+				Text: fmt.Sprintf("欢迎%s酱来到直播间", lastEnterUser.Uname),
+			}, false)
+			lastEnterUserTimer.Reset(LastEnterUserDuration)
+		}
+	}()
+
+	historyMsgLru := expirable.NewLRU[string, *ChatMessage](512, nil, MessageExpiration)
+	llmReplyLru := expirable.NewLRU[string, struct{}](LlmReplyLimitCount, nil, LlmReplyLimitDuration)
+	probabilityLlmTriggerRandom := rand.New(rand.NewSource(time.Now().UnixNano()))
+
 	isLlmProcessing := false
-	startLlmReply := func() {
+	startLlmReply := func(force bool) {
 		if !isLiving || livingCfg.DisableLlm {
 			return
 		}
 
-		isLlmProcessing = true
-
 		var msgs []*ChatMessage
-		for _, msg := range historyMsgList {
-			if time.Since(msg.Timestamp) > LlmHistoryDuration {
-				continue
+		userMap := map[string]struct{}{}
+		probabilityLlmTriggerCounter := -1 // 当前尝试触发的用户不算，所以初始值为-1
+		for _, msg := range historyMsgLru.Values() {
+			if time.Since(msg.Timestamp) <= LlmHistoryDuration {
+				msgs = append(msgs, msg)
 			}
-			msgs = append(msgs, msg)
+			if time.Since(msg.Timestamp) <= DisableLlmByUserCountDuration {
+				userMap[msg.OpenId] = struct{}{}
+			}
+			if time.Since(msg.Timestamp) <= ProbabilityLlmTriggerDuration {
+				probabilityLlmTriggerCounter++
+			}
 		}
-		historyMsgList = msgs
 
-		currentMsg := msgs[len(msgs)-1]
-		if IsRepeatedChar(currentMsg.Message) {
-			return
+		if !force {
+			llmReplyLruLen := llmReplyLru.Len()
+			if llmReplyLruLen >= LlmReplyLimitCount {
+				log.Infof("disable llm by reply count: %d", llmReplyLruLen)
+				return
+			}
+
+			if len(userMap) >= DisableLlmByUserCount {
+				log.Infof("disable llm by user count: %d", len(userMap))
+				return
+			}
+
+			currentMsg := msgs[len(msgs)-1]
+			if IsRepeatedChar(currentMsg.Message) {
+				log.Infof("disable llm by repeated msg: %s", currentMsg.Message)
+				return
+			}
+
+			var probability float64
+			if probabilityLlmTriggerCounter > ProbabilityLlmTriggerLevel2Count {
+				probability = ProbabilityLlmTriggerLevel3
+			} else if probabilityLlmTriggerCounter > ProbabilityLlmTriggerLevel1Count {
+				probability = ProbabilityLlmTriggerLevel2
+			} else {
+				probability = ProbabilityLlmTriggerLevel1
+			}
+
+			r := probabilityLlmTriggerRandom.Float64()
+			fmt.Printf("r: %.2f, probability: %.2f\n", r, probability)
+			if r <= probability {
+				log.Infof("disable llm by probability: %.2f, counter: %d, compare: %.2f", r, probabilityLlmTriggerCounter, probability)
+				return
+			}
 		}
 
+		isLlmProcessing = true
 		go func(msgs []*ChatMessage) {
 			defer func() {
 				isLlmProcessing = false
@@ -221,6 +296,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 			conn.WriteResultOK(ResultTypeLLM, gin.H{
 				"llm_result": llmRes,
 			})
+			llmReplyLru.Add(uuid.NewV4().String(), struct{}{})
 			pushTTS(&tts.NewTaskParams{
 				Text: llmRes,
 			}, false)
@@ -326,7 +402,8 @@ func (h *Handler) WebSocket(c *gin.Context) {
 
 						go h.setUser(u)
 
-						historyMsgList = append(historyMsgList, &ChatMessage{
+						historyMsgLru.Add(d.MsgID, &ChatMessage{
+							OpenId:    danmuData.OpenID,
 							User:      danmuData.Uname,
 							Message:   danmuData.Msg,
 							Timestamp: time.Now(),
@@ -350,7 +427,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 							danmuData.FansMedalLevel >= LlmReplyFansMedalLevel) || // 带10级粉丝牌
 							danmuData.GuardLevel > 0 || // 舰长
 							(danmuData.Uname == "巫女酱子" || danmuData.Uname == "青云-_-z") {
-							startLlmReply()
+							startLlmReply(false)
 						}
 
 						break
@@ -380,7 +457,8 @@ func (h *Handler) WebSocket(c *gin.Context) {
 
 						go h.setUser(u)
 
-						historyMsgList = append(historyMsgList, &ChatMessage{
+						historyMsgLru.Add(d.MsgID, &ChatMessage{
+							OpenId:    scData.OpenID,
 							User:      scData.Uname,
 							Message:   scData.Msg,
 							Timestamp: time.Now(),
@@ -388,7 +466,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 						pushTTS(&tts.NewTaskParams{
 							Text: fmt.Sprintf("谢谢%s酱的醒目留言：%s", d.Uname, d.Message),
 						}, false)
-						startLlmReply()
+						startLlmReply(true)
 						break
 					}
 				case *proto.CmdSendGiftData:
@@ -512,14 +590,17 @@ func (h *Handler) WebSocket(c *gin.Context) {
 									break
 								}
 
+								u := UserData{
+									OpenID: dd.OpenId,
+									Uname:  dd.Uname,
+									UFace:  dd.Uface,
+								}
 								conn.WriteResultOK(ResultTypeEnterRoom, &RoomEnterData{
-									UserData: UserData{
-										OpenID: dd.OpenId,
-										Uname:  dd.Uname,
-										UFace:  dd.Uface,
-									},
+									UserData:  u,
 									Timestamp: dd.Timestamp,
 								})
+
+								lastEnterUser = &u
 
 								go func(openId string) {
 									u, err := h.Dao.GetUser(context.Background(), openId)
