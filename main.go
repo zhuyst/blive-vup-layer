@@ -28,7 +28,8 @@ func main() {
 		log.Fatalf("failed to create log file: %v", err)
 		return
 	}
-	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
+	logWriter := io.MultiWriter(os.Stdout, logFile)
+	log.SetOutput(logWriter)
 
 	configFilePath := flag.String("config", "./etc/config-dev.toml", "config file path")
 	flag.Parse()
@@ -44,7 +45,7 @@ func main() {
 		return
 	}
 
-	h, err := NewHandler(cfg)
+	h, err := NewHandler(cfg, logWriter)
 	if err != nil {
 		log.Fatalf("NewHandler err: %v", err.Error())
 		return

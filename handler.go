@@ -2,6 +2,7 @@ package main
 
 import (
 	"blive-vup-layer/config"
+	"blive-vup-layer/dao"
 	"blive-vup-layer/llm"
 	"blive-vup-layer/tts"
 	"context"
@@ -13,6 +14,7 @@ import (
 	"github.com/vtb-link/bianka/basic"
 	"github.com/vtb-link/bianka/live"
 	"github.com/vtb-link/bianka/proto"
+	"golang.org/x/exp/slog"
 	"io"
 	"net/http"
 	"net/url"
@@ -21,6 +23,16 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+)
+
+const (
+	FansMedalName = "巫女酱" // 粉丝牌名称
+
+	LlmReplyFansMedalLevel     = 10 // 可以触发大模型响应的最小粉丝牌等级
+	RoomEnterTTSFansMedalLevel = 0  // 可以触发进入直播间TTS提示的最小粉丝牌等级
+
+	GiftComboDuration  = 4 * time.Second  // 礼物连击时间，连击结束后会合并播放TTS
+	LlmHistoryDuration = 10 * time.Minute // 大模型使用历史弹幕去理解上下文的时间范围
 )
 
 func HandleImg(c *gin.Context) {
@@ -68,18 +80,27 @@ type Handler struct {
 
 	LLM *llm.LLM
 	TTS *tts.TTS
+	Dao *dao.Dao
+
+	slog *slog.Logger
 }
 
-func NewHandler(cfg *config.Config) (*Handler, error) {
+func NewHandler(cfg *config.Config, logWriter io.Writer) (*Handler, error) {
 	t, err := tts.NewTTS(cfg.AliyunTTS)
 	if err != nil {
 		return nil, fmt.Errorf("tts.NewTTS err: %w", err)
+	}
+	d, err := dao.NewDao(cfg.DbPath)
+	if err != nil {
+		return nil, fmt.Errorf("dao.NewDao err: %w", err)
 	}
 	return &Handler{
 		cfg:        cfg,
 		liveClient: live.NewClient(live.NewConfig(cfg.BiliBili.AccessKey, cfg.BiliBili.SecretKey, cfg.BiliBili.AppId)),
 		LLM:        llm.NewLLM(cfg.QianFan),
 		TTS:        t,
+		Dao:        d,
+		slog:       slog.New(slog.NewJSONHandler(logWriter, &slog.HandlerOptions{Level: slog.LevelInfo})),
 	}, nil
 }
 
@@ -157,13 +178,11 @@ func (h *Handler) WebSocket(c *gin.Context) {
 			return
 		}
 
-		const expireDuration = 10 * time.Minute
-
 		isLlmProcessing = true
 
 		var msgs []*llm.ChatMessage
 		for _, msg := range historyMsgList {
-			if time.Since(msg.Timestamp) > expireDuration {
+			if time.Since(msg.Timestamp) > LlmHistoryDuration {
 				continue
 			}
 			msgs = append(msgs, msg)
@@ -267,16 +286,17 @@ func (h *Handler) WebSocket(c *gin.Context) {
 						if _, ok := danmuGiftMap[d.Msg]; ok {
 							break
 						}
+						u := UserData{
+							OpenID:                 d.OpenID,
+							Uname:                  d.Uname,
+							UFace:                  convertImgUrl(d.UFace),
+							FansMedalLevel:         d.FansMedalLevel,
+							FansMedalName:          d.FansMedalName,
+							FansMedalWearingStatus: d.FansMedalWearingStatus,
+							GuardLevel:             d.GuardLevel,
+						}
 						danmuData := &DanmuData{
-							UserData: UserData{
-								OpenID:                 d.OpenID,
-								Uname:                  d.Uname,
-								UFace:                  convertImgUrl(d.UFace),
-								FansMedalLevel:         d.FansMedalLevel,
-								FansMedalName:          d.FansMedalName,
-								FansMedalWearingStatus: d.FansMedalWearingStatus,
-								GuardLevel:             d.GuardLevel,
-							},
+							UserData:    u,
 							Msg:         d.Msg,
 							MsgID:       d.MsgID,
 							Timestamp:   d.Timestamp,
@@ -285,6 +305,8 @@ func (h *Handler) WebSocket(c *gin.Context) {
 						}
 						conn.WriteResultOK(ResultTypeDanmu, danmuData)
 
+						go h.setUser(u)
+
 						historyMsgList = append(historyMsgList, &llm.ChatMessage{
 							User:      danmuData.Uname,
 							Message:   danmuData.Msg,
@@ -292,9 +314,9 @@ func (h *Handler) WebSocket(c *gin.Context) {
 						})
 
 						pitchRate := 0
-						if !livingCfg.DisableLlm {
-							pitchRate = -100
-						}
+						//if !livingCfg.DisableLlm {
+						//	pitchRate = -100
+						//}
 						pushTTS(&tts.NewTaskParams{
 							Text:      fmt.Sprintf("%s说：%s", d.Uname, d.Msg),
 							PitchRate: pitchRate,
@@ -305,8 +327,8 @@ func (h *Handler) WebSocket(c *gin.Context) {
 						}
 
 						if (danmuData.FansMedalWearingStatus &&
-							danmuData.FansMedalName == "巫女酱" &&
-							danmuData.FansMedalLevel >= 10) || // 带10级粉丝牌
+							danmuData.FansMedalName == FansMedalName &&
+							danmuData.FansMedalLevel >= LlmReplyFansMedalLevel) || // 带10级粉丝牌
 							danmuData.GuardLevel > 0 || // 舰长
 							(danmuData.Uname == "巫女酱子" || danmuData.Uname == "青云-_-z") {
 							startLlmReply()
@@ -316,16 +338,17 @@ func (h *Handler) WebSocket(c *gin.Context) {
 					}
 				case *proto.CmdSuperChatData:
 					{
+						u := UserData{
+							OpenID:                 d.OpenID,
+							Uname:                  d.Uname,
+							UFace:                  convertImgUrl(d.Uface),
+							FansMedalLevel:         d.FansMedalLevel,
+							FansMedalName:          d.FansMedalName,
+							FansMedalWearingStatus: d.FansMedalWearingStatus,
+							GuardLevel:             d.GuardLevel,
+						}
 						scData := &SuperChatData{
-							UserData: UserData{
-								OpenID:                 d.OpenID,
-								Uname:                  d.Uname,
-								UFace:                  convertImgUrl(d.Uface),
-								FansMedalLevel:         d.FansMedalLevel,
-								FansMedalName:          d.FansMedalName,
-								FansMedalWearingStatus: d.FansMedalWearingStatus,
-								GuardLevel:             d.GuardLevel,
-							},
+							UserData:  u,
 							Msg:       d.Message,
 							MsgID:     d.MsgID,
 							MessageID: d.MessageID,
@@ -335,6 +358,9 @@ func (h *Handler) WebSocket(c *gin.Context) {
 							EndTime:   d.EndTime,
 						}
 						conn.WriteResultOK(ResultTypeSuperChat, scData)
+
+						go h.setUser(u)
+
 						historyMsgList = append(historyMsgList, &llm.ChatMessage{
 							User:      scData.Uname,
 							Message:   scData.Msg,
@@ -348,16 +374,17 @@ func (h *Handler) WebSocket(c *gin.Context) {
 					}
 				case *proto.CmdSendGiftData:
 					{
+						u := UserData{
+							OpenID:                 d.OpenID,
+							Uname:                  d.Uname,
+							UFace:                  convertImgUrl(d.Uface),
+							FansMedalLevel:         d.FansMedalLevel,
+							FansMedalName:          d.FansMedalName,
+							FansMedalWearingStatus: d.FansMedalWearingStatus,
+							GuardLevel:             d.GuardLevel,
+						}
 						conn.WriteResultOK(ResultTypeGift, &GiftData{
-							UserData: UserData{
-								OpenID:                 d.OpenID,
-								Uname:                  d.Uname,
-								UFace:                  convertImgUrl(d.Uface),
-								FansMedalLevel:         d.FansMedalLevel,
-								FansMedalName:          d.FansMedalName,
-								FansMedalWearingStatus: d.FansMedalWearingStatus,
-								GuardLevel:             d.GuardLevel,
-							},
+							UserData:  u,
 							GiftID:    d.GiftID,
 							GiftName:  d.GiftName,
 							GiftNum:   d.GiftNum,
@@ -375,7 +402,8 @@ func (h *Handler) WebSocket(c *gin.Context) {
 							},
 						})
 
-						const comboDuration = 4 * time.Second
+						go h.setUser(u)
+
 						key := fmt.Sprintf("%s-%d", d.OpenID, d.GiftID)
 
 						giftTimerMapMutex.RLock()
@@ -383,7 +411,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 						giftTimerMapMutex.RUnlock()
 						if ok {
 							atomic.AddInt32(&gt.GiftNum, int32(d.GiftNum))
-							gt.Timer.Reset(comboDuration)
+							gt.Timer.Reset(GiftComboDuration)
 							break
 						}
 
@@ -391,7 +419,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 							Uname:    d.Uname,
 							GiftNum:  int32(d.GiftNum),
 							GiftName: d.GiftName,
-							Timer:    time.NewTimer(comboDuration),
+							Timer:    time.NewTimer(GiftComboDuration),
 						}
 
 						giftTimerMapMutex.Lock()
@@ -414,26 +442,25 @@ func (h *Handler) WebSocket(c *gin.Context) {
 					}
 				case *proto.CmdGuardData:
 					{
+						u := UserData{
+							OpenID:                 d.UserInfo.OpenID,
+							Uname:                  d.UserInfo.Uname,
+							UFace:                  convertImgUrl(d.UserInfo.Uface),
+							FansMedalLevel:         d.FansMedalLevel,
+							FansMedalName:          d.FansMedalName,
+							FansMedalWearingStatus: d.FansMedalWearingStatus,
+							GuardLevel:             d.GuardLevel,
+						}
 						conn.WriteResultOK(ResultTypeGuard, &GuardData{
-							UserData: UserData{
-								OpenID:                 d.UserInfo.OpenID,
-								Uname:                  d.UserInfo.Uname,
-								UFace:                  convertImgUrl(d.UserInfo.Uface),
-								FansMedalLevel:         d.FansMedalLevel,
-								FansMedalName:          d.FansMedalName,
-								FansMedalWearingStatus: d.FansMedalWearingStatus,
-								GuardLevel:             d.GuardLevel,
-							},
+							UserData:   u,
 							GuardLevel: d.GuardLevel,
 							GuardNum:   d.GuardNum,
 							GuardUnit:  d.GuardUnit,
 							Timestamp:  d.Timestamp,
 							MsgID:      d.MsgID,
 						})
-						guardName, ok := GuardLevelMap[d.GuardLevel]
-						if !ok {
-							guardName = "舰长"
-						}
+						go h.setUser(u)
+						guardName := getGuardLevelName(d.GuardLevel)
 						pushTTS(&tts.NewTaskParams{
 							Text: fmt.Sprintf("谢谢%s酱赠送的%d个%s%s，么么哒", d.UserInfo.Uname, d.GuardNum, d.GuardUnit, guardName),
 						}, false)
@@ -475,9 +502,31 @@ func (h *Handler) WebSocket(c *gin.Context) {
 									Timestamp: dd.Timestamp,
 								})
 
-								//pushTTS(&tts.NewTaskParams{
-								//	Text: fmt.Sprintf("欢迎%s酱进入直播间", dd.Uname),
-								//}, false)
+								go func(openId string) {
+									u, err := h.Dao.GetUser(context.Background(), openId)
+									if err != nil {
+										log.Errorf("GetUser open_id: %s err: %v", openId, err)
+										return
+									}
+
+									if u == nil {
+										return
+									}
+
+									if (u.FansMedalWearingStatus && u.FansMedalLevel >= RoomEnterTTSFansMedalLevel) ||
+										u.GuardLevel > 0 {
+
+										name := dd.Uname
+										if u.GuardLevel > 0 {
+											guardName := getGuardLevelName(u.GuardLevel)
+											name = guardName + name
+										}
+
+										pushTTS(&tts.NewTaskParams{
+											Text: fmt.Sprintf("欢迎%s酱来到直播间", name),
+										}, false)
+									}
+								}(dd.OpenId)
 
 								break
 							}
@@ -497,7 +546,12 @@ func (h *Handler) WebSocket(c *gin.Context) {
 			},
 		}
 
-		wcs, err = basic.StartWebsocket(startResp, dispatcherHandleMap, onCloseHandle, basic.DefaultLoggerGenerator())
+		wcs, err = basic.StartWebsocket(
+			startResp,
+			dispatcherHandleMap,
+			onCloseHandle,
+			h.slog,
+		)
 		if err != nil {
 			log.Errorf("basic.StartWebsocket err: %v", err)
 			conn.WriteResultError(ResultTypeRoom, CodeInternalError, err.Error())
@@ -580,6 +634,26 @@ func (h *Handler) WebSocket(c *gin.Context) {
 			}
 		}
 	}
+}
+
+func (h *Handler) setUser(userData UserData) {
+	err := h.Dao.CreateOrUpdateUser(context.Background(), &dao.User{
+		OpenID:                 userData.OpenID,
+		FansMedalWearingStatus: userData.FansMedalWearingStatus,
+		FansMedalLevel:         userData.FansMedalLevel,
+		GuardLevel:             userData.GuardLevel,
+	})
+	if err != nil {
+		log.Errorf("CreateOrUpdateUser open_id: %s, err: %v", userData.OpenID, err)
+	}
+}
+
+func getGuardLevelName(guardLevel int) string {
+	guardName, ok := GuardLevelMap[guardLevel]
+	if !ok {
+		guardName = "舰长"
+	}
+	return guardName
 }
 
 func convertImgUrl(imgUrl string) string {

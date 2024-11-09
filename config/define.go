@@ -5,6 +5,7 @@ const (
 )
 
 type Config struct {
+	DbPath    string           `toml:"db_path"`
 	QianFan   *QianFanConfig   `toml:"qianfan"`
 	AliyunTTS *AliyunTTSConfig `toml:"aliyun_tts"`
 	BiliBili  *BiliBiliConfig  `toml:"biliBili"`

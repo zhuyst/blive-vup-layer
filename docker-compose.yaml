@@ -6,6 +6,7 @@ services:
     restart: always
     volumes:
       - ./result:/usr/src/app/result
+      - ./data:/data
       - ./etc/config.toml:/etc/config.toml
     ports:
       - "12450:8080"
