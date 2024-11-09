@@ -29,7 +29,7 @@ const (
 	FansMedalName = "巫女酱" // 粉丝牌名称
 
 	LlmReplyFansMedalLevel     = 10 // 可以触发大模型响应的最小粉丝牌等级
-	RoomEnterTTSFansMedalLevel = 0  // 可以触发进入直播间TTS提示的最小粉丝牌等级
+	RoomEnterTTSFansMedalLevel = 15 // 可以触发进入直播间TTS提示的最小粉丝牌等级
 
 	GiftComboDuration  = 4 * time.Second  // 礼物连击时间，连击结束后会合并播放TTS
 	LlmHistoryDuration = 10 * time.Minute // 大模型使用历史弹幕去理解上下文的时间范围
@@ -115,6 +115,12 @@ type LiveConfig struct {
 	DisableLlm bool `json:"disable_llm"`
 }
 
+type ChatMessage struct {
+	User      string
+	Message   string
+	Timestamp time.Time
+}
+
 func (h *Handler) WebSocket(c *gin.Context) {
 	conn, err := NewWebSocketConn(c)
 	if err != nil {
@@ -171,7 +177,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 		}
 	}
 
-	var historyMsgList []*llm.ChatMessage
+	var historyMsgList []*ChatMessage
 	isLlmProcessing := false
 	startLlmReply := func() {
 		if !isLiving || livingCfg.DisableLlm {
@@ -180,7 +186,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 
 		isLlmProcessing = true
 
-		var msgs []*llm.ChatMessage
+		var msgs []*ChatMessage
 		for _, msg := range historyMsgList {
 			if time.Since(msg.Timestamp) > LlmHistoryDuration {
 				continue
@@ -189,11 +195,24 @@ func (h *Handler) WebSocket(c *gin.Context) {
 		}
 		historyMsgList = msgs
 
-		go func(msgs []*llm.ChatMessage) {
+		currentMsg := msgs[len(msgs)-1]
+		if IsRepeatedChar(currentMsg.Message) {
+			return
+		}
+
+		go func(msgs []*ChatMessage) {
 			defer func() {
 				isLlmProcessing = false
 			}()
-			llmRes, err := h.LLM.ChatWithLLM(context.Background(), msgs)
+
+			llmMsgs := make([]*llm.ChatMessage, len(msgs))
+			for i, msg := range msgs {
+				llmMsgs[i] = &llm.ChatMessage{
+					User:    msg.User,
+					Message: msg.Message,
+				}
+			}
+			llmRes, err := h.LLM.ChatWithLLM(context.Background(), llmMsgs)
 			if err != nil {
 				conn.WriteResultError(ResultTypeLLM, CodeInternalError, err.Error())
 				log.Errorf("ChatWithLLM err: %v", err)
@@ -307,7 +326,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 
 						go h.setUser(u)
 
-						historyMsgList = append(historyMsgList, &llm.ChatMessage{
+						historyMsgList = append(historyMsgList, &ChatMessage{
 							User:      danmuData.Uname,
 							Message:   danmuData.Msg,
 							Timestamp: time.Now(),
@@ -361,7 +380,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 
 						go h.setUser(u)
 
-						historyMsgList = append(historyMsgList, &llm.ChatMessage{
+						historyMsgList = append(historyMsgList, &ChatMessage{
 							User:      scData.Uname,
 							Message:   scData.Msg,
 							Timestamp: time.Now(),

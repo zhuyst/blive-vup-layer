@@ -8,7 +8,6 @@ import (
 	"github.com/baidubce/bce-qianfan-sdk/go/qianfan"
 	log "github.com/sirupsen/logrus"
 	"strings"
-	"time"
 )
 
 type LLM struct {
@@ -29,9 +28,8 @@ func NewLLM(config *config.QianFanConfig) *LLM {
 }
 
 type ChatMessage struct {
-	User      string
-	Message   string
-	Timestamp time.Time
+	User    string
+	Message string
 }
 
 func (msg *ChatMessage) String() string {
