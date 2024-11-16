@@ -52,7 +52,7 @@ export default {
 .sc-list-container {
   width: 100%;
   height: 50%;
-  overflow-y: hidden;
+  overflow-y: auto;
 }
 
 .sc-list {

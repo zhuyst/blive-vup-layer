@@ -59,7 +59,7 @@ export default {
   width: 100%;
   height: 80%;
   border: 2px solid rgb(110, 171, 211);
-  overflow-y: hidden;
+  overflow-y: auto;
   scroll-behavior: smooth;
 }
 

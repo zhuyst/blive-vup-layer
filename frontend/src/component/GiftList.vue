@@ -49,7 +49,7 @@ export default {
   margin: 3%;
   padding: 10px;
 
-  overflow-y: hidden;
+  overflow-y: auto;
 }
 
 .gift-list {
