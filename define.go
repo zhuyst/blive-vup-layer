@@ -140,7 +140,7 @@ type CmdRoomEnterData struct {
 
 type RoomEnterData struct {
 	UserData
-	Timestamp int `json:"timestamp"`
+	Timestamp int64 `json:"timestamp"`
 }
 
 var GuardLevelMap = map[int]string{

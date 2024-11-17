@@ -368,7 +368,7 @@ func (h *Handler) WebSocket(c *gin.Context) {
 				log.Infof(string(msg.Payload()))
 
 				// 自动解析
-				cmd, data, err := proto.AutomaticParsingMessageCommand(msg.Payload())
+				_, data, err := proto.AutomaticParsingMessageCommand(msg.Payload())
 				if err != nil {
 					log.Errorf("proto.AutomaticParsingMessageCommand err: %v", err)
 					return err
@@ -563,78 +563,63 @@ func (h *Handler) WebSocket(c *gin.Context) {
 						}, false)
 						break
 					}
-				case map[string]interface{}:
+				case *proto.CmdLiveStartData:
 					{
-						switch cmd {
-						case CmdLiveStart:
-							{
-								pushTTS(&tts.NewTaskParams{
-									Text: "主人开始直播啦，弹幕姬启动！",
-								}, true)
-								isLiving = true
-								break
-							}
-						case CmdLiveEnd:
-							{
-								pushTTS(&tts.NewTaskParams{
-									Text: "主人直播结束啦，今天辛苦了！",
-								}, true)
-								isLiving = false
-								break
-							}
-						case CmdLiveRoomEnter:
-							{
-								var dd CmdRoomEnterData
-								if err := MapToStruct(d, &dd); err != nil {
-									log.Errorf("MapToStruct err: %v", err)
-									break
-								}
-
-								u := UserData{
-									OpenID: dd.OpenId,
-									Uname:  dd.Uname,
-									UFace:  dd.Uface,
-								}
-								conn.WriteResultOK(ResultTypeEnterRoom, &RoomEnterData{
-									UserData:  u,
-									Timestamp: dd.Timestamp,
-								})
-
-								lastEnterUser = &u
-
-								go func(openId string) {
-									u, err := h.Dao.GetUser(context.Background(), openId)
-									if err != nil {
-										log.Errorf("GetUser open_id: %s err: %v", openId, err)
-										return
-									}
-
-									if u == nil {
-										return
-									}
-
-									if (u.FansMedalWearingStatus && u.FansMedalLevel >= RoomEnterTTSFansMedalLevel) ||
-										u.GuardLevel > 0 {
-
-										name := dd.Uname
-										if u.GuardLevel > 0 {
-											guardName := getGuardLevelName(u.GuardLevel)
-											name = guardName + name
-										}
-
-										pushTTS(&tts.NewTaskParams{
-											Text: fmt.Sprintf("欢迎%s酱来到直播间", name),
-										}, false)
-									}
-								}(dd.OpenId)
-
-								break
-							}
-						default:
-							{
-								break
-							}
+						pushTTS(&tts.NewTaskParams{
+							Text: "主人开始直播啦，弹幕姬启动！",
+						}, true)
+						isLiving = true
+						break
+					}
+				case *proto.CmdLiveEndData:
+					{
+						pushTTS(&tts.NewTaskParams{
+							Text: "主人直播结束啦，今天辛苦了！",
+						}, true)
+						isLiving = false
+						break
+					}
+				case *proto.CmdLiveRoomEnterData:
+					{
+						u := UserData{
+							OpenID: d.OpenID,
+							Uname:  d.Uname,
+							UFace:  d.Uface,
 						}
+						conn.WriteResultOK(ResultTypeEnterRoom, &RoomEnterData{
+							UserData:  u,
+							Timestamp: d.Timestamp,
+						})
+
+						lastEnterUser = &u
+
+						go func(openId string) {
+							u, err := h.Dao.GetUser(context.Background(), openId)
+							if err != nil {
+								log.Errorf("GetUser open_id: %s err: %v", openId, err)
+								return
+							}
+
+							if u == nil {
+								return
+							}
+
+							if (u.FansMedalWearingStatus && u.FansMedalLevel >= RoomEnterTTSFansMedalLevel) ||
+								u.GuardLevel > 0 {
+
+								name := d.Uname
+								if u.GuardLevel > 0 {
+									guardName := getGuardLevelName(u.GuardLevel)
+									name = guardName + name
+								}
+
+								pushTTS(&tts.NewTaskParams{
+									Text: fmt.Sprintf("欢迎%s酱来到直播间", name),
+								}, false)
+							}
+						}(d.OpenID)
+
+						break
 					}
 				default:
 					{
