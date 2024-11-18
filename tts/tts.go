@@ -29,7 +29,7 @@ type Task struct {
 	TaskId string
 	Logger *log.Entry
 
-	File  io.Writer
+	File  *os.File
 	Fname string
 	Err   error
 
@@ -45,7 +45,7 @@ type NewTaskParams struct {
 
 func (tts *TTS) NewTask(params *NewTaskParams) (*Task, error) {
 	taskId := uuid.NewV4().String()
-	l := log.WithField("task_id", uuid.NewV4().String())
+	l := log.WithField("task_id", taskId)
 
 	fname := path.Join(config.ResultFilePath, fmt.Sprintf("tts-%s.wav", taskId))
 	fout, err := os.OpenFile(fname, os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0666)
@@ -55,7 +55,7 @@ func (tts *TTS) NewTask(params *NewTaskParams) (*Task, error) {
 	param := nls.SpeechSynthesisStartParam{
 		Voice:      "voice-3e06127",
 		Format:     "wav",
-		SampleRate: 24000,
+		SampleRate: 48000,
 		Volume:     50,
 		SpeechRate: -100,
 		PitchRate:  params.PitchRate,
@@ -97,6 +97,7 @@ func (tts *TTS) NewTask(params *NewTaskParams) (*Task, error) {
 }
 
 func (task *Task) Run() (string, error) {
+	defer task.File.Close()
 	ch, err := task.speechSynthesis.Start(task.text, task.param, nil)
 	if err != nil {
 		task.Logger.Errorf("Start err: %v", err)
@@ -125,6 +126,7 @@ func (task *Task) Run() (string, error) {
 
 func (task *Task) onTaskFailed(text string, param interface{}) {
 	task.Logger.Errorf("TaskFailed: %s", text)
+	task.File.Close()
 }
 
 func (task *Task) onSynthesisResult(data []byte, param interface{}) {
@@ -133,10 +135,12 @@ func (task *Task) onSynthesisResult(data []byte, param interface{}) {
 
 func (task *Task) onCompleted(text string, param interface{}) {
 	task.Logger.Infof("onCompleted: %s", text)
+	task.File.Close()
 }
 
 func (task *Task) onClose(param interface{}) {
 	task.Logger.Infof("onClosed")
+	task.File.Close()
 }
 
 func (task *Task) waitReady(ch chan bool) error {
